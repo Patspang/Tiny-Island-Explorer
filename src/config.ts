@@ -46,7 +46,7 @@ export const PLAYER = {
 } as const;
 
 export const CAMERA = {
-  fov: 50,
+  fov: 55,
   near: 0.1,
   far: 900,
   /** Point the camera looks at, relative to the player's feet. */
@@ -56,7 +56,7 @@ export const CAMERA = {
   maxDistance: 15,
   minPitch: -0.25,
   maxPitch: 1.15,
-  defaultPitch: 0.32,
+  defaultPitch: 0.22,
   dragSensitivity: 0.0055,
   wheelSensitivity: 0.0045,
   /** Exponential smoothing rates (higher = snappier). */

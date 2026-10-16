@@ -2,10 +2,10 @@ import * as THREE from 'three';
 import { RENDER } from '../config';
 
 export const SKY = {
-  zenith: new THREE.Color('#4f93d8'),
-  horizon: new THREE.Color('#cfe6ef'),
-  haze: new THREE.Color('#f4e3c4'),
-  fog: new THREE.Color('#c4dfe8'),
+  zenith: new THREE.Color('#3f86d6'),
+  horizon: new THREE.Color('#bfe0ee'),
+  haze: new THREE.Color('#ffe2b5'),
+  fog: new THREE.Color('#b9dbe8'),
 };
 
 /** Direction the sunlight comes *from* (warm late-morning sun). */
@@ -31,10 +31,10 @@ export class Atmosphere {
     scene.fog = new THREE.Fog(SKY.fog, 90, 520);
     scene.background = SKY.horizon.clone();
 
-    this.hemi = new THREE.HemisphereLight('#cfe8ff', '#7a8a4f', 1.05);
+    this.hemi = new THREE.HemisphereLight('#cde6ff', '#8f8a62', 1.15);
     this.group.add(this.hemi);
 
-    this.sun = new THREE.DirectionalLight('#fff0d6', 2.6);
+    this.sun = new THREE.DirectionalLight('#ffe9c7', 2.9);
     this.sun.castShadow = true;
     const ext = RENDER.shadowExtent;
     const cam = this.sun.shadow.camera;
@@ -79,7 +79,7 @@ export class Atmosphere {
           void main() {
             vec3 d = normalize(vDir);
             float h = clamp(d.y, -1.0, 1.0);
-            float up = pow(smoothstep(-0.02, 0.75, h), 0.7);
+            float up = pow(smoothstep(-0.02, 0.6, h), 0.6);
             vec3 col = mix(horizon, zenith, up);
             float s = max(dot(d, sunDir), 0.0);
             col = mix(col, haze, pow(s, 6.0) * 0.45 * (1.0 - up * 0.6));

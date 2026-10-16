@@ -81,6 +81,32 @@ test.describe('island', () => {
     for (const s of samples) expect(Math.hypot(s.feet.x - lh.x, s.feet.z - lh.z)).toBeGreaterThan(lh.radius + 0.25);
   });
 
+  for (const kind of ['rock', 'tree'] as const) {
+    test(`cannot walk through a ${kind}`, async ({ page }) => {
+      const all = await page.evaluate(() => window.__game!.obstacles());
+      // Pick a sizeable one on fairly open ground, nearest the island centre.
+      const candidates = all
+        .filter((o) => o.kind === kind && (kind === 'tree' || o.radius > 0.9))
+        .sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z));
+      const target = candidates[0];
+      expect(target, `a ${kind} to test against`).toBeTruthy();
+      // Approach from the island-centre side, 5 m out.
+      const len = Math.hypot(target.x, target.z) || 1;
+      const sx = target.x - (target.x / len) * 5;
+      const sz = target.z - (target.z / len) * 5;
+      const ground = (await page.evaluate(([x, z]) => window.__game!.physicsGround(x, z), [sx, sz]))!;
+      const yaw = Math.atan2(-(target.x - sx), -(target.z - sz));
+      await teleport(page, sx, ground + 0.2, sz, yaw);
+      const samples = await sampleSimWhileHolding(page, ['KeyW'], 2.5);
+      const minDist = Math.min(...samples.map((s) => Math.hypot(s.feet.x - target.x, s.feet.z - target.z)));
+      // Capsule radius is 0.34; rock hulls are irregular so allow some slack inside the estimate.
+      const limit = kind === 'tree' ? target.radius + 0.3 : target.radius * 0.6;
+      expect(minDist).toBeGreaterThan(limit);
+      // ...and not by walking up and over it either.
+      expect(Math.max(...samples.map((s) => s.feet.y)) - ground).toBeLessThan(0.7);
+    });
+  }
+
   test('walking into the sea is stopped or recovered onto land', async ({ page }) => {
     const spawn = await page.evaluate(() => window.__game!.spawn());
     // Face the open sea (+Z from the spawn beach) and keep walking.

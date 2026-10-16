@@ -31,6 +31,7 @@ export function createDebugHandle(game: Game, mode: string) {
         teleportCount: p.teleportCount,
         camera: { ...v(cam), yaw: game.followCamera.yaw, pitch: game.followCamera.pitch, distance: game.followCamera.currentDistance },
         groundUnderCamera: game.world.groundHeight(cam.x, cam.z),
+        render: { calls: game.renderer.info.render.calls, triangles: game.renderer.info.render.triangles },
       };
     },
     groundHeight: (x: number, z: number) => game.world.groundHeight(x, z),
@@ -54,6 +55,19 @@ export function createDebugHandle(game: Game, mode: string) {
         position && target
           ? { position: new THREE.Vector3(...position), target: new THREE.Vector3(...target) }
           : null;
+    },
+    /** Triangle budget per mesh (instanced meshes multiplied out), largest first. */
+    sceneStats() {
+      const rows: Array<{ name: string; triangles: number; instances: number }> = [];
+      game.scene.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const g = mesh.geometry;
+        const tris = (g.index ? g.index.count : g.getAttribute('position').count) / 3;
+        const inst = (mesh as THREE.InstancedMesh).isInstancedMesh ? (mesh as THREE.InstancedMesh).count : 1;
+        rows.push({ name: mesh.name || mesh.parent?.name || mesh.type, triangles: tris * inst, instances: inst });
+      });
+      return rows.sort((a, b) => b.triangles - a.triangles).slice(0, 15);
     },
     play: () => game.play(),
     togglePause: () => game.togglePause(),

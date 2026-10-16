@@ -118,8 +118,8 @@ export class Ocean {
           // Foam: a lapping band at the waterline plus a few broken streaks.
           float lap = 0.5 + 0.5 * sin(depth * 18.0 - uTime * 1.6 + vnoise(vWorld.xz * 0.5) * 3.0);
           float foamBand = smoothstep(0.45, 0.0, depth) * (0.55 + 0.45 * lap);
-          float streaks = smoothstep(0.62, 0.8, vnoise(vWorld.xz * 0.9 + uTime * 0.15)) * smoothstep(1.4, 0.3, depth);
-          float foam = clamp(foamBand + streaks * 0.5, 0.0, 1.0) * inside;
+          float streaks = smoothstep(0.7, 0.85, vnoise(vWorld.xz * 1.6 + uTime * 0.15)) * smoothstep(0.9, 0.2, depth);
+          float foam = clamp(foamBand + streaks * 0.35, 0.0, 1.0) * inside;
           col = mix(col, uFoam, foam * 0.85);
 
           // Shallows are clear enough to see the sand; deep water is opaque.
@@ -134,7 +134,7 @@ export class Ocean {
     });
     this.material.uniforms.uDepth.value = this.depthTexture;
 
-    const geometry = new THREE.PlaneGeometry(WORLD.oceanSize, WORLD.oceanSize, 320, 320);
+    const geometry = new THREE.PlaneGeometry(WORLD.oceanSize, WORLD.oceanSize, 200, 200);
     geometry.rotateX(-Math.PI / 2);
     this.mesh = new THREE.Mesh(geometry, this.material);
     this.mesh.position.y = WORLD.waterLevel;

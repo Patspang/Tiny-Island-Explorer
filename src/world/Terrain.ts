@@ -13,8 +13,9 @@ const PALETTE = {
   grassDeep: new THREE.Color('#4f9440'),
   grassSlope: new THREE.Color('#5c8a3d'),
   path: new THREE.Color('#c9a675'),
-  rock: new THREE.Color('#9a9184'),
-  rockDark: new THREE.Color('#6f665c'),
+  rock: new THREE.Color('#b0a490'),
+  rockDark: new THREE.Color('#8a7f70'),
+  rockLight: new THREE.Color('#c9bea8'),
   moss: new THREE.Color('#71904a'),
 };
 
@@ -42,8 +43,14 @@ function surfaceColor(x: number, z: number, h: number, ny: number, out: THREE.Co
   const cliff = cliffWeight(x, z);
   const rockW = smoothstep(0.22 - cliff * 0.06, 0.34 - cliff * 0.06, slope + variation * 0.04);
   if (rockW > 0) {
-    tmp.copy(PALETTE.rock).lerp(PALETTE.rockDark, 0.5 + 0.5 * Math.sin(h * 2.6 + variation * 2));
+    // Horizontal strata: alternating light and dark bands, slightly wavy.
+    const band = Math.sin(h * 2.1 + variation * 1.6 + large * 2);
+    tmp.copy(PALETTE.rock);
+    mixInto(tmp, PALETTE.rockLight, smoothstep(0.3, 0.9, band) * 0.8);
+    mixInto(tmp, PALETTE.rockDark, smoothstep(-0.4, -0.95, band) * 0.8);
     mixInto(tmp, PALETTE.moss, smoothstep(0.3, 0.2, slope) * 0.6);
+    // Damp, darker rock near the waterline.
+    mixInto(tmp, PALETTE.rockDark, smoothstep(1.2, -0.5, h) * 0.6);
     mixInto(out, tmp, rockW);
   }
 
@@ -59,6 +66,10 @@ function surfaceColor(x: number, z: number, h: number, ny: number, out: THREE.Co
   mixInto(out, PALETTE.sand, sandW);
   mixInto(out, PALETTE.wetSand, smoothstep(0.35, 0.0, h) * (1 - rockW * 0.6));
   mixInto(out, PALETTE.seabed, smoothstep(-0.2, -1.5, h));
+
+  // Fine mottling so large areas don't read as flat gradients.
+  const fine = fbm2(x / 2.3, z / 2.3, 2, 93);
+  out.multiplyScalar(1 + fine * 0.09);
   return out;
 }
 
@@ -75,7 +86,6 @@ export class Terrain {
     const seg = WORLD.terrainSegments;
     const verts = seg + 1;
     const positions = new Float32Array(verts * verts * 3);
-    const normals = new Float32Array(verts * verts * 3);
     const colors = new Float32Array(verts * verts * 3);
     const color = new THREE.Color();
 
@@ -89,9 +99,6 @@ export class Terrain {
         positions[k] = x;
         positions[k + 1] = h;
         positions[k + 2] = z;
-        normals[k] = n.x;
-        normals[k + 1] = n.y;
-        normals[k + 2] = n.z;
         surfaceColor(x, z, h, n.y, color);
         colors[k] = color.r;
         colors[k + 1] = color.g;
@@ -119,9 +126,11 @@ export class Terrain {
 
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    this.geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     this.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     this.geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+    // Shade with normals of the actual triangles (analytic normals are sharper than the
+    // mesh can represent and streak on cliffs).
+    this.geometry.computeVertexNormals();
     this.geometry.computeBoundingSphere();
 
     const material = new THREE.MeshStandardMaterial({
