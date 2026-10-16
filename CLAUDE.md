@@ -8,7 +8,7 @@ A third-person exploration game set on a small stylized island. This is a game, 
 
 **Stage 1 (done):** one island; capsule player (walk/run/jump, slopes, collision); third-person camera; fall recovery.
 
-**Stage 2 (current): lighthouse quest.** Five lens pieces (`QUEST_SPOTS` in `IslandShape.ts`, one on a ruin that needs a jump) → HUD counter → reach the lighthouse → lamp relights and the scene blends to dusk → finale screen. Logic in `src/quest/Quest.ts` (runs in the fixed step), presentation in `Lighthouse.setLight`, `Atmosphere.setDusk`, `Ocean.setDusk`, `ui/Overlays.ts`.
+**Stage 2 (current): lighthouse quest.** Five lens pieces: woodland clearing and cliff top (find), ruin (one jump), sea rock via stepping stones (`ISLET`), keeper's hut roof via crates (`Lighthouse`). No beams by default; after 90 s without progress a hint beam rises over the nearest piece. A plaque by the door fills a socket per piece; the finale starts only at the door (`QuestGoal`), then the lamp relights and the scene blends to dusk. Logic in `src/quest/Quest.ts` (fixed step), presentation in `Lighthouse`, `Atmosphere.setDusk`, `Ocean.setDusk`, `ui/Overlays.ts`. Tests drive jumps deterministically via `window.__game.simulate`.
 
 Not yet: saving progress, sound, animated (rigged) character, inventory, NPCs, multiple islands. If a request implies one of these, say so and ask.
 
@@ -23,7 +23,7 @@ Three.js (rendering) · Rapier (`@dimforge/rapier3d-compat`, physics) · Vite (d
 - `npm run build` — type check + production build
 - `npm run test:e2e` — Playwright tests against the production build (~10 min with software WebGL). In cloud sessions prefix with `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`.
 
-Debug: `?sandbox` loads the flat movement test level; `?debug` exposes `window.__game` (snapshot, teleport, setCameraYaw, viewFrom, physicsGround, obstacles, route, sceneStats) in production builds.
+Debug: `?sandbox` loads the flat movement test level; `?debug` exposes `window.__game` (snapshot, simulate, teleport, setCameraYaw, viewFrom, physicsGround, obstacles, route, questPieces, setHintDelay, sceneStats) in production builds.
 
 Known Rapier pitfalls (verified with @dimforge/rapier3d-compat 0.21): never push the capsule down while grounded (it sinks into boxes and stalls on trimeshes — rely on snap-to-ground), and never spawn/teleport the capsule within the skin offset of a surface (it slips through). See `PlayerController`.
 

@@ -155,7 +155,7 @@ export class QuestHud {
 
   setProgress(collected: number, total: number): void {
     this.dots.forEach((d, i) => d.classList.toggle('found', i < collected));
-    this.label.textContent = collected >= total ? 'Lens restored — to the lighthouse!' : `Lens pieces ${collected} / ${total}`;
+    this.label.textContent = collected >= total ? 'Lens restored — to the lighthouse door!' : `Lens pieces ${collected} / ${total}`;
   }
 
   setDone(): void {

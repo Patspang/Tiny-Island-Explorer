@@ -208,15 +208,42 @@ export interface QuestSpot {
   z: number;
   /** Height of the piece above the ground (the ruin piece sits on top of the ruin). */
   lift: number;
+  /** Absolute height instead of ground + lift (pieces standing on built features). */
+  y?: number;
 }
 
 /** The old stone ruin: its top is out of step reach, so the piece on it needs a jump. */
 export const RUIN = { x: 24, z: 6, height: 1.0, halfSize: 0.8 } as const;
 
+export interface Pillar {
+  x: number;
+  z: number;
+  /** Absolute height of the flat top. */
+  top: number;
+  radius: number;
+}
+
+/**
+ * Stepping stones from the western cove out to a small sea rock. Each top is ~0.38 m higher
+ * than the last (above auto-step), so every hop is a jump; the water below is deep enough to
+ * send the player back to the beach.
+ */
+export const ISLET = (() => {
+  const theta = 3.1;
+  const R = coastRadius(theta);
+  const dir = { x: Math.cos(theta), z: Math.sin(theta) };
+  const at = (d: number) => ({ x: dir.x * R * d, z: dir.z * R * d });
+  const shore = at(0.9);
+  const shoreY = heightAt(shore.x, shore.z);
+  // ~1.8 m between stone centres (~0.7 m gaps): a confident hop, not a pixel-perfect one.
+  const stones: Pillar[] = [0.935, 0.965, 0.995].map((d, i) => ({ ...at(d), top: shoreY + 0.38 * (i + 1), radius: 0.58 }));
+  const rock: Pillar = { ...at(1.035), top: shoreY + 0.38 * 4, radius: 1.5 };
+  return { shore, stones, rock };
+})();
+
 export const QUEST_SPOTS: ReadonlyArray<QuestSpot> = [
-  { id: 'cove', label: 'western beach cove', x: -51.7, z: 2.2, lift: 0.9 },
+  { id: 'islet', label: 'sea rock off the western cove', x: ISLET.rock.x, z: ISLET.rock.z, lift: 0, y: ISLET.rock.top + 0.85 },
   { id: 'cliff', label: 'north-east cliff top', x: 40.8, z: -27.9, lift: 0.9 },
   { id: 'ruin', label: 'top of the old ruin', x: RUIN.x, z: RUIN.z, lift: RUIN.height + 0.75 },
   { id: 'woods', label: 'woodland clearing', x: -28, z: 8, lift: 0.9 },
-  { id: 'hill', label: 'lighthouse hill shoulder', x: -5, z: -30, lift: 0.9 },
 ];

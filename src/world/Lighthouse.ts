@@ -22,6 +22,15 @@ export class Lighthouse {
   private readonly beams: THREE.Group;
   private readonly light: THREE.PointLight;
   private readonly halo: THREE.Sprite;
+  private readonly doorMat: THREE.MeshStandardMaterial;
+  private readonly socketMats: THREE.MeshStandardMaterial[] = [];
+  private doorReady = false;
+  /** World position just outside the door (where the quest finale triggers). */
+  readonly doorPosition = new THREE.Vector3();
+  /** Unit vector pointing out of the door. */
+  readonly doorOutward = new THREE.Vector3();
+  /** World position of the lens piece on the keeper's hut roof. */
+  readonly roofPiecePosition = new THREE.Vector3();
   private lightLevel = 0;
   private readonly disposables: Array<{ dispose(): void }> = [];
 
@@ -73,8 +82,9 @@ export class Lighthouse {
     const top = PLATFORM_HEIGHT + TOWER_HEIGHT;
 
     // Door (facing local +Z) with a small step and arch.
-    add(new THREE.BoxGeometry(0.8, 1.45, 0.25), wood, 0, PLATFORM_HEIGHT + 0.72, BASE_RADIUS - 0.04);
-    const arch = add(new THREE.CylinderGeometry(0.4, 0.4, 0.25, 16, 1, false, 0, Math.PI), wood, 0, PLATFORM_HEIGHT + 1.45, BASE_RADIUS - 0.04);
+    this.doorMat = m('#8a5a3a', { roughness: 0.85, emissive: '#ffc864', emissiveIntensity: 0 });
+    add(new THREE.BoxGeometry(0.8, 1.45, 0.25), this.doorMat, 0, PLATFORM_HEIGHT + 0.72, BASE_RADIUS - 0.04);
+    const arch = add(new THREE.CylinderGeometry(0.4, 0.4, 0.25, 16, 1, false, 0, Math.PI), this.doorMat, 0, PLATFORM_HEIGHT + 1.45, BASE_RADIUS - 0.04);
     arch.rotation.set(Math.PI / 2, Math.PI / 2, 0);
     add(new THREE.BoxGeometry(1.2, 0.18, 0.6), darkStone, 0, PLATFORM_HEIGHT + 0.09, BASE_RADIUS + 0.2);
 
@@ -198,6 +208,58 @@ export class Lighthouse {
       hut.add(part);
     }
 
+    // Crates stacked against the hut: a jump-by-jump way up onto the roof.
+    // Tops at 0.6 m and 1.2 m (each above auto-step height), then the eave at 1.9 m.
+    const crateMat = m('#b07a45', { roughness: 0.85 });
+    const crateBand = m('#7d5230', { roughness: 0.85 });
+    const crates: Array<[number, number, number, number]> = [
+      // x, z, top height, size  (hut-local)
+      [-0.75, 2.45, 0.6, 0.62],
+      [-0.75, 1.65, 0.6, 0.66],
+      [-0.75, 1.65, 1.2, 0.6],
+    ];
+    const crateGeos = new Map<number, THREE.BufferGeometry>();
+    for (const [x, z, top, size] of crates) {
+      // Extend below the platform so crates never float on uneven ground.
+      const h = size + (top <= size + 0.01 ? 0.3 : 0);
+      let g = crateGeos.get(h * 100 + size);
+      if (!g) {
+        g = this.track(new THREE.BoxGeometry(size, h, size));
+        crateGeos.set(h * 100 + size, g);
+      }
+      const crate = new THREE.Mesh(g, crateMat);
+      crate.position.set(x, top - h / 2, z);
+      crate.rotation.y = (x + z) * 0.4;
+      crate.castShadow = crate.receiveShadow = true;
+      hut.add(crate);
+      const band = new THREE.Mesh(this.track(new THREE.BoxGeometry(size * 1.02, 0.08, size * 1.02)), crateBand);
+      band.position.set(x, top - size / 2, z);
+      band.rotation.y = crate.rotation.y;
+      hut.add(band);
+    }
+
+    // Plaque beside the door: a stone slab holding the five lens sockets.
+    const plaque = new THREE.Group();
+    plaque.position.set(1.55, PLATFORM_HEIGHT, BASE_RADIUS + 0.75);
+    plaque.rotation.y = -0.35;
+    this.group.add(plaque);
+    const slab = new THREE.Mesh(this.track(new THREE.BoxGeometry(0.9, 1.25, 0.2)), stone);
+    slab.position.y = 0.62;
+    slab.castShadow = slab.receiveShadow = true;
+    plaque.add(slab);
+    const frame = new THREE.Mesh(this.track(new THREE.TorusGeometry(0.29, 0.03, 8, 30)), metal);
+    frame.position.set(0, 0.85, 0.11);
+    plaque.add(frame);
+    const socketGeo = this.track(new THREE.OctahedronGeometry(0.07, 0).scale(0.8, 1.3, 0.5));
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 + Math.PI / 2;
+      const mat = m('#2a3640', { roughness: 0.25, emissive: '#6fd6ff', emissiveIntensity: 0, flatShading: true });
+      this.socketMats.push(mat);
+      const sock = new THREE.Mesh(socketGeo, mat);
+      sock.position.set(Math.cos(a) * 0.19, 0.85 + Math.sin(a) * 0.19, 0.12);
+      plaque.add(sock);
+    }
+
     // --- Colliders (in world space).
     this.group.updateMatrixWorld(true);
     const body = physics.createStaticBody();
@@ -219,16 +281,60 @@ export class Lighthouse {
     hut.getWorldPosition(hutWorld);
     const hutQuat = new THREE.Quaternion();
     hut.getWorldQuaternion(hutQuat);
+    const hutRot = { x: hutQuat.x, y: hutQuat.y, z: hutQuat.z, w: hutQuat.w };
+    const toWorld = (x: number, y: number, z: number) => hut.localToWorld(new THREE.Vector3(x, y, z));
+    // Walls up to the eave, then a roof hull matching the visible gable (walkable, ~39°).
+    const wallCentre = toWorld(0, 0.95, 0);
     world.createCollider(
-      rapier.ColliderDesc.cuboid(1.3, 1.5, 1.05)
-        .setTranslation(hutWorld.x, hutWorld.y + 1.2, hutWorld.z)
-        .setRotation({ x: hutQuat.x, y: hutQuat.y, z: hutQuat.z, w: hutQuat.w })
+      rapier.ColliderDesc.cuboid(1.3, 0.95, 1.05).setTranslation(wallCentre.x, wallCentre.y, wallCentre.z).setRotation(hutRot).setCollisionGroups(solid),
+      body,
+    );
+    const roofPts: number[] = [];
+    for (const x of [-1.5, 1.5]) {
+      for (const [y, z] of [
+        [1.9, -1.25],
+        [1.9, 1.25],
+        [2.9, 0],
+      ] as const) {
+        const v = toWorld(x, y, z);
+        roofPts.push(v.x, v.y, v.z);
+      }
+    }
+    const roofDesc = rapier.ColliderDesc.convexHull(new Float32Array(roofPts));
+    if (roofDesc) world.createCollider(roofDesc.setCollisionGroups(solid), body);
+    for (const [x, z, top, size] of crates) {
+      const crateTop = toWorld(x, top, z);
+      this.obstacles.push({ kind: 'crate', x: crateTop.x, y: crateTop.y, z: crateTop.z, radius: size / 2 });
+      const c = toWorld(x, top - size / 2 - 0.15, z);
+      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, (x + z) * 0.4, 0));
+      q.premultiply(hutQuat);
+      world.createCollider(
+        rapier.ColliderDesc.cuboid(size / 2, size / 2 + 0.15, size / 2)
+          .setTranslation(c.x, c.y, c.z)
+          .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
+          .setCollisionGroups(solid),
+        body,
+      );
+    }
+    const plaqueWorld = new THREE.Vector3();
+    plaque.getWorldPosition(plaqueWorld);
+    const plaqueQuat = new THREE.Quaternion();
+    plaque.getWorldQuaternion(plaqueQuat);
+    world.createCollider(
+      rapier.ColliderDesc.cuboid(0.45, 0.65, 0.12)
+        .setTranslation(plaqueWorld.x, plaqueWorld.y + 0.62, plaqueWorld.z)
+        .setRotation({ x: plaqueQuat.x, y: plaqueQuat.y, z: plaqueQuat.z, w: plaqueQuat.w })
         .setCollisionGroups(solid),
       body,
     );
 
+    this.roofPiecePosition.copy(toWorld(0, 2.9 + 0.85, 0));
+    this.doorPosition.copy(this.group.localToWorld(new THREE.Vector3(0, PLATFORM_HEIGHT, BASE_RADIUS + 0.9)));
+    this.doorOutward.set(Math.sin(facing), 0, Math.cos(facing));
+
     this.obstacles.push({ kind: 'lighthouse', x: LIGHTHOUSE.x, y: baseY, z: LIGHTHOUSE.z, radius: BASE_RADIUS + 0.55 });
     this.obstacles.push({ kind: 'hut', x: hutWorld.x, y: hutWorld.y, z: hutWorld.z, radius: 1.05 });
+    this.obstacles.push({ kind: 'plaque', x: plaqueWorld.x, y: plaqueWorld.y, z: plaqueWorld.z, radius: 0.12 });
   }
 
   private track<T extends { dispose(): void }>(d: T): T {
@@ -249,8 +355,20 @@ export class Lighthouse {
     this.halo.material.opacity = level;
   }
 
+  /** Light up one plaque socket per collected piece; the door glows once all are in. */
+  setLensProgress(collected: number, total: number): void {
+    this.socketMats.forEach((mat, i) => {
+      const lit = i < collected;
+      mat.color.set(lit ? '#d8f6ff' : '#2a3640');
+      mat.emissiveIntensity = lit ? 1.4 : 0;
+    });
+    this.doorReady = collected >= total;
+  }
+
   update(_dt: number, time: number): void {
     this.lamp.rotation.y = time * 0.6;
+    // A warm, breathing glow around the door once the lens is ready (until the lamp is lit).
+    this.doorMat.emissiveIntensity = this.doorReady && this.lightLevel < 1 ? 0.35 + 0.25 * Math.sin(time * 3) : 0;
   }
 
   dispose(): void {

@@ -16,6 +16,8 @@ export type QuestUiEvent =
   | { type: 'collect'; collected: number; total: number; label: string }
   | { type: 'complete' }
   | { type: 'finaleStart' }
+  | { type: 'hint'; label: string }
+  | { type: 'doorLocked'; missing: number }
   | { type: 'done' };
 export type WorldFactory = (physics: PhysicsWorld, scene: THREE.Scene) => GameWorld;
 
@@ -84,12 +86,20 @@ export class Game {
     const layout = this.world.quest;
     this.quest = layout
       ? new Quest(layout.spots, layout.goal, {
-          onCollect: (collected, total, label) => this.onQuest({ type: 'collect', collected, total, label }),
+          onCollect: (collected, total, label) => {
+            this.world.setQuestProgress?.(collected, total);
+            this.onQuest({ type: 'collect', collected, total, label });
+          },
+          onHint: (label) => this.onQuest({ type: 'hint', label }),
+          onDoorLocked: (missing) => this.onQuest({ type: 'doorLocked', missing }),
           onComplete: () => this.onQuest({ type: 'complete' }),
           onFinaleStart: () => this.onQuest({ type: 'finaleStart' }),
         })
       : null;
-    if (this.quest) this.scene.add(this.quest.group);
+    if (this.quest) {
+      this.scene.add(this.quest.group);
+      this.world.setQuestProgress?.(0, this.quest.total);
+    }
 
     // Rapier's scene queries need one step before colliders are visible to the character controller.
     physics.step();
@@ -247,6 +257,22 @@ export class Game {
     if (q.state === 'done' && !this.questDoneSent) {
       this.questDoneSent = true;
       this.onQuest({ type: 'done' });
+    }
+  }
+
+  /**
+   * Advance the simulation synchronously with a given input (debug/tests only). Uses the same
+   * fixed-step player, quest and physics code as the frame loop; only the keyboard is bypassed.
+   */
+  simulateSteps(steps: number, input: MoveInput, jumpPressed = false): void {
+    if (this.state !== 'playing') return;
+    if (jumpPressed) this.player.requestJump();
+    for (let i = 0; i < steps; i++) {
+      this.player.fixedUpdate(PHYSICS.step, input, this.followCamera.movementYaw);
+      this.quest?.fixedUpdate(PHYSICS.step, this.player.position);
+      this.physics.step();
+      this.simTime += PHYSICS.step;
+      this.syncVisualEvents();
     }
   }
 

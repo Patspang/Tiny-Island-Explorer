@@ -21,12 +21,19 @@ export interface QuestEvents {
   onCollect?: (collected: number, total: number, label: string) => void;
   onComplete?: () => void;
   onFinaleStart?: () => void;
+  /** A hint beam appeared over a piece after a long stretch without progress. */
+  onHint?: (label: string) => void;
+  /** The player reached the door without the full lens. */
+  onDoorLocked?: (missing: number) => void;
 }
 
 /** Player capsule centre must come this close (3D) to a piece to pick it up. */
 export const PICKUP_DISTANCE = 1.1;
 const FINALE_LIGHT_TIME = 2.2;
 const FINALE_DUSK_TIME = 6;
+/** Seconds of play without finding a piece before a hint beam appears. */
+export const DEFAULT_HINT_DELAY = 90;
+const DOOR_MESSAGE_COOLDOWN = 6;
 
 /**
  * Lighthouse quest: collect the lens pieces, return to the lighthouse, light it.
@@ -43,6 +50,12 @@ export class Quest {
   private readonly visuals: PieceVisual[] = [];
   private finaleTime = 0;
   private readonly shared: SharedAssets;
+  /** Seconds since the last piece was found (or the quest started). */
+  private sinceProgress = 0;
+  /** Index of the piece currently showing a hint beam, or -1. */
+  hintIndex = -1;
+  hintDelay = DEFAULT_HINT_DELAY;
+  private doorCooldown = 0;
 
   constructor(
     readonly spots: ReadonlyArray<QuestPieceSpot>,
@@ -72,14 +85,24 @@ export class Quest {
 
   /** Fixed-step update with the player's capsule centre. */
   fixedUpdate(dt: number, player: THREE.Vector3): void {
+    this.doorCooldown = Math.max(0, this.doorCooldown - dt);
+    const atDoor =
+      Math.hypot(player.x - this.goal.x, player.z - this.goal.z) <= this.goal.radius &&
+      Math.abs(player.y - this.goal.y) < 2.5;
     if (this.state === 'collecting') {
       this.spots.forEach((spot, i) => {
         if (this.collected[i]) return;
         if (spot.position.distanceTo(player) <= PICKUP_DISTANCE) this.collect(i);
       });
+      if (this.state !== 'collecting') return;
+      if (atDoor && this.doorCooldown === 0) {
+        this.doorCooldown = DOOR_MESSAGE_COOLDOWN;
+        this.events.onDoorLocked?.(this.total - this.collectedCount);
+      }
+      this.sinceProgress += dt;
+      if (this.hintIndex < 0 && this.sinceProgress >= this.hintDelay) this.showHint(player);
     } else if (this.state === 'complete') {
-      const d = Math.hypot(player.x - this.goal.x, player.z - this.goal.z);
-      if (d <= this.goal.radius && Math.abs(player.y - this.goal.y) < 4) {
+      if (atDoor) {
         this.state = 'finale';
         this.finaleTime = 0;
         this.events.onFinaleStart?.();
@@ -96,9 +119,29 @@ export class Quest {
     }
   }
 
+  /** Raise a beam over the nearest remaining piece. */
+  private showHint(player: THREE.Vector3): void {
+    let best = -1;
+    let bestD = Infinity;
+    this.spots.forEach((spot, i) => {
+      if (this.collected[i]) return;
+      const d = spot.position.distanceTo(player);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    if (best < 0) return;
+    this.hintIndex = best;
+    this.visuals[best].setBeam(true);
+    this.events.onHint?.(this.spots[best].label);
+  }
+
   private collect(i: number): void {
     this.collected[i] = true;
     this.visuals[i].collect();
+    this.sinceProgress = 0;
+    if (this.hintIndex === i) this.hintIndex = -1;
     const n = this.collectedCount;
     this.events.onCollect?.(n, this.total, this.spots[i].label);
     if (n === this.total) {
@@ -188,6 +231,8 @@ class PieceVisual {
   private readonly glow: THREE.Sprite;
   private collectedAt = -1;
   private time = 0;
+  private beamOn = false;
+  private beamLevel = 0;
 
   constructor(position: THREE.Vector3, shared: SharedAssets) {
     this.group.position.copy(position);
@@ -206,11 +251,17 @@ class PieceVisual {
     this.beam = new THREE.Mesh(shared.beamGeo, this.beamMat);
     this.beam.position.y = -0.9;
     this.beam.renderOrder = 3;
+    this.beam.visible = false;
     this.group.add(this.beam);
   }
 
   collect(): void {
     this.collectedAt = this.time;
+  }
+
+  /** Beams are hints now: off unless the quest decides the player needs help. */
+  setBeam(on: boolean): void {
+    this.beamOn = on;
   }
 
   dispose(): void {
@@ -236,8 +287,13 @@ class PieceVisual {
     this.holder.position.y = Math.sin(time * 1.8) * 0.12;
     this.holder.rotation.y = time * 1.2;
     this.holder.children[1].rotation.x = Math.PI / 2 + Math.sin(time * 0.9) * 0.25;
-    // The beam helps spot pieces from afar but fades out up close so it doesn't clutter.
+    // Hint beam fades in over ~2 s, and fades out up close so it doesn't clutter.
+    this.beamLevel = THREE.MathUtils.clamp(this.beamLevel + (this.beamOn ? dt : -dt) * 0.5, 0, 1);
     const d = cameraPosition.distanceTo(this.group.position);
-    this.beamMat.uniforms.uOpacity.value = THREE.MathUtils.smoothstep(d, 8, 22);
+    this.beamMat.uniforms.uOpacity.value = this.beamLevel * THREE.MathUtils.smoothstep(d, 8, 22);
+    this.beam.visible = this.beamLevel > 0;
+    // Without a beam, a slow twinkle is the only tell: it reads up close, not across the island.
+    const twinkle = 0.75 + 0.25 * Math.sin(time * 4.3 + this.group.position.x);
+    this.glow.scale.setScalar(1.3 * twinkle);
   }
 }

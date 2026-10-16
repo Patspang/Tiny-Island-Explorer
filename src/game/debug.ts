@@ -38,6 +38,7 @@ export function createDebugHandle(game: Game, mode: string) {
               total: game.quest.total,
               lightLevel: game.quest.lightLevel,
               duskLevel: game.quest.duskLevel,
+              hintIndex: game.quest.hintIndex,
             }
           : null,
         render: { calls: game.renderer.info.render.calls, triangles: game.renderer.info.render.triangles },
@@ -55,6 +56,10 @@ export function createDebugHandle(game: Game, mode: string) {
       game.quest
         ? game.quest.spots.map((s, i) => ({ id: s.id, ...v(s.position), collected: game.quest!.isCollected(i) }))
         : [],
+    /** Shorten the hint timer (tests). */
+    setHintDelay(seconds: number) {
+      if (game.quest) game.quest.hintDelay = seconds;
+    },
     questGoal: () => (game.quest ? { ...game.quest.goal } : null),
     route: () => game.world.route.map((p) => ({ x: p.x, z: p.z })),
     teleport(x: number, feetY: number, z: number) {
@@ -82,6 +87,15 @@ export function createDebugHandle(game: Game, mode: string) {
         rows.push({ name: mesh.name || mesh.parent?.name || mesh.type, triangles: tris * inst, instances: inst });
       });
       return rows.sort((a, b) => b.triangles - a.triangles).slice(0, 15);
+    },
+    /** Run `seconds` of simulation right now with the given input (deterministic tests). */
+    simulate(seconds: number, input: { x?: number; y?: number; run?: boolean; jumpHeld?: boolean; jump?: boolean }) {
+      const steps = Math.max(1, Math.round(seconds / PHYSICS.step));
+      game.simulateSteps(
+        steps,
+        { x: input.x ?? 0, y: input.y ?? 0, run: input.run ?? false, jumpHeld: input.jumpHeld ?? false },
+        input.jump ?? false,
+      );
     },
     play: () => game.play(),
     togglePause: () => game.togglePause(),
