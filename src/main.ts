@@ -18,19 +18,20 @@ async function boot(): Promise<void> {
   const mode = params.has('sandbox') ? 'sandbox' : 'island';
 
   let game: Game | null = null;
-  const start = new StartScreen(app, () => {
-    if (!game) return;
-    start.hide();
-    game.play();
-    hint.flash();
-  });
+  const start = new StartScreen(app, () => game?.play());
   const pause = new PauseMenu(app, () => game?.togglePause());
   const hint = new Hint(app);
 
   try {
     const physics = await PhysicsWorld.create();
     game = new Game(app, physics, (p) => (mode === 'sandbox' ? new Sandbox(p) : new Island(p)));
+    let started = false;
     game.onStateChange = (state) => {
+      if (state !== 'title' && !started) {
+        started = true;
+        start.hide();
+        hint.flash();
+      }
       pause.setVisible(state === 'paused');
       if (state !== 'playing') hint.hide();
     };

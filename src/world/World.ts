@@ -17,6 +17,8 @@ export interface GameWorld {
   /** Initial camera yaw at spawn. */
   readonly spawnYaw: number;
   readonly obstacles: ReadonlyArray<ObstacleInfo>;
+  /** Main walking route (spawn -> landmark), if the level has one. */
+  readonly route: ReadonlyArray<{ x: number; z: number }>;
   /** Visual ground height used for camera clearance (physics remains authoritative). */
   groundHeight(x: number, z: number): number;
   /** Whether a grounded position is a good place to respawn after falling. */

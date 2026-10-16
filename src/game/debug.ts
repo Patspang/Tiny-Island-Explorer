@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { PHYSICS, PLAYER } from '../config';
 import type { Game } from './Game';
 
@@ -40,11 +41,19 @@ export function createDebugHandle(game: Game, mode: string) {
     },
     obstacles: () => game.world.obstacles.map((o) => ({ ...o })),
     spawn: () => v(game.world.spawn),
+    route: () => game.world.route.map((p) => ({ x: p.x, z: p.z })),
     teleport(x: number, feetY: number, z: number) {
       game.player.teleportFeet(x, feetY, z);
     },
     setCameraYaw(yaw: number, pitch?: number) {
       game.followCamera.snapTo(game.feetPosition, yaw, pitch);
+    },
+    /** Pin the camera for screenshots; call with no arguments to release it. */
+    viewFrom(position?: [number, number, number], target?: [number, number, number]) {
+      game.cameraOverride =
+        position && target
+          ? { position: new THREE.Vector3(...position), target: new THREE.Vector3(...target) }
+          : null;
     },
     play: () => game.play(),
     togglePause: () => game.togglePause(),

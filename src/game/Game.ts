@@ -42,6 +42,8 @@ export class Game {
   private fpsTime = 0;
   fps = 0;
   stepsLastFrame = 0;
+  /** Debug-only fixed camera (screenshots). */
+  cameraOverride: { position: THREE.Vector3; target: THREE.Vector3 } | null = null;
 
   constructor(
     private readonly container: HTMLElement,
@@ -177,6 +179,10 @@ export class Game {
       this.followCamera.setTargetYaw(this.followCamera.yaw + frameDt * 0.12);
     }
     this.followCamera.update(frameDt, this.renderFeet);
+    if (this.cameraOverride) {
+      this.followCamera.camera.position.copy(this.cameraOverride.position);
+      this.followCamera.camera.lookAt(this.cameraOverride.target);
+    }
 
     const groundY = this.groundBelow(p.position);
     this.visual.update(

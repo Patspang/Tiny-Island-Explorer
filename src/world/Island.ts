@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GROUP, groups, type PhysicsWorld } from '../physics/PhysicsWorld';
 import { Environment } from './Environment';
-import { coastDistance, coastRadius, heightAt, LIGHTHOUSE, normalAt, SPAWN } from './IslandShape';
+import { coastDistance, coastRadius, heightAt, LIGHTHOUSE, normalAt, PATH_POINTS, SPAWN } from './IslandShape';
 import { Lighthouse } from './Lighthouse';
 import { Ocean } from './Ocean';
 import { Terrain } from './Terrain';
@@ -17,6 +17,7 @@ export class Island implements GameWorld {
   readonly spawn: THREE.Vector3;
   readonly spawnYaw: number;
   readonly obstacles: ObstacleInfo[] = [];
+  readonly route = PATH_POINTS;
 
   private readonly terrain: Terrain;
   private readonly ocean: Ocean;

@@ -11,6 +11,7 @@ export class Sandbox implements GameWorld {
   readonly spawn = new THREE.Vector3(0, 0, 0);
   readonly spawnYaw = 0;
   readonly obstacles: ObstacleInfo[] = [];
+  readonly route = [];
   private readonly disposables: Array<{ dispose(): void }> = [];
 
   /** Test fixtures, in world coordinates. */
