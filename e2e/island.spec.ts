@@ -102,8 +102,11 @@ test.describe('island', () => {
       // Capsule radius is 0.34; rock hulls are irregular so allow some slack inside the estimate.
       const limit = kind === 'tree' ? target.radius + 0.3 : target.radius * 0.6;
       expect(minDist).toBeGreaterThan(limit);
-      // ...and not by walking up and over it either.
-      expect(Math.max(...samples.map((s) => s.feet.y)) - ground).toBeLessThan(0.7);
+      // ...and not by walking up and over it either: feet stay on the terrain itself.
+      for (const s of samples) {
+        const terrain = await page.evaluate(([x, z]) => window.__game!.groundHeight(x, z), [s.feet.x, s.feet.z]);
+        expect(s.feet.y - terrain).toBeLessThan(0.45);
+      }
     });
   }
 
@@ -129,10 +132,11 @@ test.describe('island', () => {
     await teleport(page, x, top + 0.2, z, Math.atan2(-Math.cos(theta), -Math.sin(theta)));
     await waitSim(page, 0.6);
     const before = (await snapshot(page)).teleportCount;
-    const samples = await sampleSimWhileHolding(page, ['KeyW'], 5);
-    const end = samples.at(-1)!;
-    expect(end.teleportCount).toBeGreaterThan(before);
-    await waitSim(page, 0.5);
+    // Walk off the edge; let go as soon as we're rescued so we don't walk straight off again.
+    await page.keyboard.down('KeyW');
+    await page.waitForFunction((b) => window.__game!.snapshot().teleportCount > b, before, { timeout: 120_000 });
+    await page.keyboard.up('KeyW');
+    await waitSim(page, 0.8);
     const after = await snapshot(page);
     expect(after.feet.y).toBeGreaterThan(0.3);
     expect(after.grounded).toBe(true);
