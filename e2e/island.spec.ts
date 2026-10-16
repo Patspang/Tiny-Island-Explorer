@@ -138,6 +138,39 @@ test.describe('island', () => {
     expect(after.grounded).toBe(true);
   });
 
+  test('orbiting the camera around the lighthouse never snaps, clips or loses the player', async ({ page }) => {
+    const lh = (await page.evaluate(() => window.__game!.obstacles())).find((o) => o.kind === 'lighthouse')!;
+    // Stand on the pad right next to the tower.
+    await teleport(page, lh.x, lh.y + 0.4, lh.z + lh.radius + 1.2, 0);
+    const canvas = page.locator('canvas');
+    const box = (await canvas.boundingBox())!;
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const samples: Snapshot[] = [];
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    // Drag a full turn (~1140 px at 0.0055 rad/px) in small steps.
+    for (let i = 1; i <= 24; i++) {
+      await page.mouse.move(cx + i * 48, cy + Math.sin(i / 3) * 30, { steps: 2 });
+      await page.waitForTimeout(40);
+      samples.push(await snapshot(page));
+    }
+    await page.mouse.up();
+    samples.push(...(await sampleSim(page, 1)));
+    for (const s of samples) {
+      // Outside the tower, above the ground, and still near the player.
+      expect(Math.hypot(s.camera.x - lh.x, s.camera.z - lh.z)).toBeGreaterThan(lh.radius - 0.05);
+      expect(s.camera.y).toBeGreaterThan(s.groundUnderCamera + 0.3);
+      expect(Math.hypot(s.camera.x - s.feet.x, s.camera.y - s.feet.y, s.camera.z - s.feet.z)).toBeLessThan(16);
+    }
+    // No teleport-like jumps between consecutive samples (allowing for slow frames).
+    for (let i = 1; i < samples.length; i++) {
+      const a = samples[i - 1].camera;
+      const b = samples[i].camera;
+      expect(Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z)).toBeLessThan(6);
+    }
+  });
+
   test('camera pulls in instead of clipping into the hill', async ({ page }) => {
     // Stand at the foot of the lighthouse hill and put the camera on the uphill side.
     const lh = (await page.evaluate(() => window.__game!.obstacles())).find((o) => o.kind === 'lighthouse')!;

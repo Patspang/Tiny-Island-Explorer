@@ -5,6 +5,8 @@ export default defineConfig({
   base: './',
   build: {
     target: 'es2022',
-    chunkSizeWarningLimit: 2500,
+    // Rapier's compat build inlines its WebAssembly as base64 (~3.5 MB of the ~5 MB bundle,
+    // 1.8 MB gzipped). Acceptable for a game page; revisit if load time becomes a problem.
+    chunkSizeWarningLimit: 5500,
   },
 });

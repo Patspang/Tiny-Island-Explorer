@@ -19,12 +19,14 @@ Three.js (rendering) · Rapier (`@dimforge/rapier3d-compat`, physics) · Vite (d
 
 ## Commands
 
-The project is not scaffolded yet. Once it is, these are the expected scripts — update this section if they differ:
-
-- `npm run dev` — Vite dev server
+- `npm run dev` — Vite dev server (debug handle always on)
 - `npx tsc --noEmit` — type check
-- `npm run build` — production build
-- `npm run test:e2e` — browser tests (if/when added)
+- `npm run build` — type check + production build
+- `npm run test:e2e` — Playwright tests against the production build (~10 min with software WebGL). In cloud sessions prefix with `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`.
+
+Debug: `?sandbox` loads the flat movement test level; `?debug` exposes `window.__game` (snapshot, teleport, setCameraYaw, viewFrom, physicsGround, obstacles, route, sceneStats) in production builds.
+
+Known Rapier pitfalls (verified with @dimforge/rapier3d-compat 0.21): never push the capsule down while grounded (it sinks into boxes and stalls on trimeshes — rely on snap-to-ground), and never spawn/teleport the capsule within the skin offset of a surface (it slips through). See `PlayerController`.
 
 ## Architecture rules
 

@@ -195,8 +195,8 @@ export class PlayerController {
       this.airTime += dt;
     }
 
-    this.trackSafeSpot(dt);
-    this.checkFallRecovery();
+    // Recover first, so a fall can never be recorded as a "safe" spot in the same step.
+    if (!this.checkFallRecovery()) this.trackSafeSpot(dt);
   }
 
   /**
@@ -220,14 +220,19 @@ export class PlayerController {
     this.safeTimer += dt;
     if (!this.grounded || this.safeTimer < SAFE_SAMPLE_INTERVAL) return;
     this.safeTimer = 0;
-    if (this.isSafeSpot(this.position.x, this.feetY, this.position.z)) this.lastSafe.copy(this.position);
+    const feet = this.feetY;
+    const sane = feet > WORLD.waterLevel - PLAYER.drownDepth + 0.5 && feet > PLAYER.killPlaneY + 5;
+    if (sane && this.isSafeSpot(this.position.x, feet, this.position.z)) this.lastSafe.copy(this.position);
   }
 
-  private checkFallRecovery(): void {
+  /** Returns true if the player was rescued this step. */
+  private checkFallRecovery(): boolean {
     const drowned = this.feetY < WORLD.waterLevel - PLAYER.drownDepth;
     if (drowned || this.position.y < PLAYER.killPlaneY) {
       this.teleportCenter(this.lastSafe.x, this.lastSafe.y + TELEPORT_CLEARANCE, this.lastSafe.z);
+      return true;
     }
+    return false;
   }
 
   /** Respawn at the start beach. */
