@@ -37,7 +37,11 @@ async function boot(): Promise<void> {
         hud.setProgress(e.collected, e.total);
         if (e.collected < e.total) hud.message(`Lens piece found! ${e.total - e.collected} to go.`);
       } else if (e.type === 'complete') {
-        hud.message('The lens is whole again. Bring it to the lighthouse!', 5000);
+        hud.message('The lens is whole again. Bring it to the lighthouse door!', 5000);
+      } else if (e.type === 'hint') {
+        hud.message('A beam of light rises somewhere on the island…', 4500);
+      } else if (e.type === 'doorLocked') {
+        hud.message(`The lens frame by the door is empty. ${e.missing} piece${e.missing === 1 ? '' : 's'} still missing.`, 4000);
       } else if (e.type === 'finaleStart') {
         hud.message('The lighthouse flickers to life…', 4500);
       } else if (e.type === 'done') {
@@ -55,7 +59,7 @@ async function boot(): Promise<void> {
         hint.flash();
         if (hud) {
           hud.show();
-          hud.message('Find the five lost pieces of the lighthouse lens. Look for the glowing beams.', 5500);
+          hud.message('Find the five lost pieces of the lighthouse lens and bring them to its door.', 5500);
         }
       }
       pause.setVisible(state === 'paused');

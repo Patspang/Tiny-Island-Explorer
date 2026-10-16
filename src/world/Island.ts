@@ -3,6 +3,7 @@ import { GROUP, groups, type PhysicsWorld } from '../physics/PhysicsWorld';
 import { Environment } from './Environment';
 import type { QuestGoal, QuestPieceSpot } from '../quest/Quest';
 import { coastDistance, coastRadius, heightAt, LIGHTHOUSE, normalAt, PATH_POINTS, QUEST_SPOTS, SPAWN } from './IslandShape';
+import { Islet } from './Islet';
 import { Lighthouse } from './Lighthouse';
 import { Ocean } from './Ocean';
 import { Ruin } from './Ruin';
@@ -27,6 +28,7 @@ export class Island implements GameWorld {
   private readonly lighthouse: Lighthouse;
   private readonly environment: Environment;
   private readonly ruin: Ruin;
+  private readonly islet: Islet;
   private readonly n = { x: 0, y: 1, z: 0 };
 
   constructor(physics: PhysicsWorld) {
@@ -55,16 +57,29 @@ export class Island implements GameWorld {
     this.group.add(this.ruin.group);
     this.obstacles.push(...this.ruin.obstacles);
 
+    this.islet = new Islet(physics);
+    this.group.add(this.islet.group);
+    this.obstacles.push(...this.islet.obstacles);
+
+    const door = this.lighthouse.doorPosition;
     this.quest = {
-      spots: QUEST_SPOTS.map((q) => ({
-        id: q.id,
-        label: q.label,
-        position: new THREE.Vector3(q.x, heightAt(q.x, q.z) + q.lift, q.z),
-      })),
-      goal: { x: LIGHTHOUSE.x, y: LIGHTHOUSE.y, z: LIGHTHOUSE.z, radius: 7 },
+      spots: [
+        ...QUEST_SPOTS.map((q) => ({
+          id: q.id,
+          label: q.label,
+          position: new THREE.Vector3(q.x, q.y ?? heightAt(q.x, q.z) + q.lift, q.z),
+        })),
+        { id: 'roof', label: "keeper's hut roof", position: this.lighthouse.roofPiecePosition.clone() },
+      ],
+      // The finale starts at the lighthouse door, not anywhere near the tower.
+      goal: { x: door.x, y: door.y, z: door.z, radius: 1.9 },
     };
 
     this.addBoundary(physics);
+  }
+
+  setQuestProgress(collected: number, total: number): void {
+    this.lighthouse.setLensProgress(collected, total);
   }
 
   setLighthouseLight(level: number): void {
@@ -122,5 +137,6 @@ export class Island implements GameWorld {
     this.lighthouse.dispose();
     this.environment.dispose();
     this.ruin.dispose();
+    this.islet.dispose();
   }
 }

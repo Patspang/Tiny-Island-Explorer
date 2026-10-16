@@ -22,6 +22,8 @@ export interface GameWorld {
   readonly route: ReadonlyArray<{ x: number; z: number }>;
   /** Lighthouse quest layout, if the level has one. */
   readonly quest?: { spots: QuestPieceSpot[]; goal: QuestGoal };
+  /** Quest progress, for in-world feedback (e.g. sockets on the lighthouse plaque). */
+  setQuestProgress?(collected: number, total: number): void;
   /** Lighthouse lamp level, 0..1 (quest finale). */
   setLighthouseLight?(level: number): void;
   /** Day-to-dusk blend for world materials (the ocean); the sky itself is owned by Atmosphere. */
