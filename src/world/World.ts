@@ -1,4 +1,5 @@
 import type * as THREE from 'three';
+import type { QuestGoal, QuestPieceSpot } from '../quest/Quest';
 
 /** A solid obstacle, exposed for debugging and automated tests. */
 export interface ObstacleInfo {
@@ -19,6 +20,12 @@ export interface GameWorld {
   readonly obstacles: ReadonlyArray<ObstacleInfo>;
   /** Main walking route (spawn -> landmark), if the level has one. */
   readonly route: ReadonlyArray<{ x: number; z: number }>;
+  /** Lighthouse quest layout, if the level has one. */
+  readonly quest?: { spots: QuestPieceSpot[]; goal: QuestGoal };
+  /** Lighthouse lamp level, 0..1 (quest finale). */
+  setLighthouseLight?(level: number): void;
+  /** Day-to-dusk blend for world materials (the ocean); the sky itself is owned by Atmosphere. */
+  setDusk?(t: number, horizon: THREE.Color): void;
   /** Visual ground height used for camera clearance (physics remains authoritative). */
   groundHeight(x: number, z: number): number;
   /** Whether a grounded position is a good place to respawn after falling. */

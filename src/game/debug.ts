@@ -31,6 +31,15 @@ export function createDebugHandle(game: Game, mode: string) {
         teleportCount: p.teleportCount,
         camera: { ...v(cam), yaw: game.followCamera.yaw, pitch: game.followCamera.pitch, distance: game.followCamera.currentDistance },
         groundUnderCamera: game.world.groundHeight(cam.x, cam.z),
+        quest: game.quest
+          ? {
+              state: game.quest.state,
+              collected: game.quest.collectedCount,
+              total: game.quest.total,
+              lightLevel: game.quest.lightLevel,
+              duskLevel: game.quest.duskLevel,
+            }
+          : null,
         render: { calls: game.renderer.info.render.calls, triangles: game.renderer.info.render.triangles },
       };
     },
@@ -42,6 +51,11 @@ export function createDebugHandle(game: Game, mode: string) {
     },
     obstacles: () => game.world.obstacles.map((o) => ({ ...o })),
     spawn: () => v(game.world.spawn),
+    questPieces: () =>
+      game.quest
+        ? game.quest.spots.map((s, i) => ({ id: s.id, ...v(s.position), collected: game.quest!.isCollected(i) }))
+        : [],
+    questGoal: () => (game.quest ? { ...game.quest.goal } : null),
     route: () => game.world.route.map((p) => ({ x: p.x, z: p.z })),
     teleport(x: number, feetY: number, z: number) {
       game.player.teleportFeet(x, feetY, z);

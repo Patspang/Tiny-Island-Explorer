@@ -8,6 +8,8 @@ import {
   heightAt,
   LIGHTHOUSE,
   normalAt,
+  QUEST_SPOTS,
+  RUIN,
   SPAWN,
 } from './IslandShape';
 import { createRng, fbm2, smoothstep } from './noise';
@@ -114,8 +116,14 @@ export class Environment {
     this.occupied.push({ x: LIGHTHOUSE.x, z: LIGHTHOUSE.z, r: LIGHTHOUSE.padRadius + 3.5 });
     this.occupied.push({ x: SPAWN.x, z: SPAWN.z, r: 5 });
 
+    // Keep quest pieces (and the ruin) in the open.
+    for (const q of QUEST_SPOTS) this.occupied.push({ x: q.x, z: q.z, r: 2.5 });
+    this.occupied.push({ x: RUIN.x, z: RUIN.z, r: 3.5 });
+
     // --- Trees, in clusters so the island has woods and open meadows.
-    const clusterCentres: Array<{ x: number; z: number }> = [];
+    // The woodland quest piece sits in a clearing inside one of the woods.
+    const woods = QUEST_SPOTS.find((q) => q.id === 'woods');
+    const clusterCentres: Array<{ x: number; z: number }> = woods ? [{ x: woods.x, z: woods.z }] : [];
     for (let tries = 0; clusterCentres.length < 15 && tries < 600; tries++) {
       const x = (rng() - 0.5) * 120;
       const z = (rng() - 0.5) * 120;

@@ -16,6 +16,13 @@ export class Lighthouse {
   readonly group = new THREE.Group();
   readonly obstacles: ObstacleInfo[] = [];
   private readonly lamp: THREE.Group;
+  private readonly glass: THREE.MeshStandardMaterial;
+  private readonly lampMat: THREE.MeshStandardMaterial;
+  private readonly beamMat: THREE.ShaderMaterial;
+  private readonly beams: THREE.Group;
+  private readonly light: THREE.PointLight;
+  private readonly halo: THREE.Sprite;
+  private lightLevel = 0;
   private readonly disposables: Array<{ dispose(): void }> = [];
 
   constructor(physics: PhysicsWorld) {
@@ -33,7 +40,8 @@ export class Lighthouse {
     const stone = m('#a69a88', { roughness: 0.95, flatShading: true });
     const darkStone = m('#7d7366', { roughness: 0.95, flatShading: true });
     const metal = m('#3b4447', { roughness: 0.5, metalness: 0.4 });
-    const glass = m('#fff3c4', { emissive: '#ffd77a', emissiveIntensity: 0.9, roughness: 0.2 });
+    const glass = m('#e8eef0', { emissive: '#ffd77a', emissiveIntensity: 0.05, roughness: 0.2 });
+    this.glass = glass;
     const windowMat = m('#2f3b45', { roughness: 0.3, emissive: '#16232b', emissiveIntensity: 0.4 });
     const wood = m('#8a5a3a', { roughness: 0.85 });
     const roofTile = m('#b84a3b', { roughness: 0.75, flatShading: true });
@@ -112,11 +120,65 @@ export class Lighthouse {
     // A slowly turning lamp inside the lantern.
     this.lamp = new THREE.Group();
     this.lamp.position.y = top + 0.85;
-    const lampMat = m('#fff8e0', { emissive: '#fff1b8', emissiveIntensity: 2.2 });
+    const lampMat = m('#fff8e0', { emissive: '#fff1b8', emissiveIntensity: 0 });
+    this.lampMat = lampMat;
     const lens = new THREE.Mesh(this.track(new THREE.BoxGeometry(0.5, 0.55, 0.18)), lampMat);
     lens.position.z = 0.32;
     this.lamp.add(lens);
     this.group.add(this.lamp);
+
+    // Light beams (hidden until the lamp is relit) and a warm light for the hilltop at dusk.
+    this.beamMat = this.track(
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        uniforms: { uOpacity: { value: 0 }, uColor: { value: new THREE.Color('#ffe2a0') } },
+        vertexShader: /* glsl */ `
+          varying float vD;
+          void main() { vD = length(position) / 34.0; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+        fragmentShader: /* glsl */ `
+          uniform float uOpacity; uniform vec3 uColor; varying float vD;
+          void main() { float a = pow(1.0 - clamp(vD, 0.0, 1.0), 1.3) * 0.6 * uOpacity; gl_FragColor = vec4(uColor * a, a); }`,
+      }),
+    );
+    const beamGeo = this.track(new THREE.ConeGeometry(3.6, 34, 24, 1, true));
+    beamGeo.translate(0, -17, 0); // apex at the lamp
+    beamGeo.rotateX(Math.PI / 2); // point along -Z
+    this.beams = new THREE.Group();
+    for (const rot of [0, Math.PI]) {
+      const beam = new THREE.Mesh(beamGeo, this.beamMat);
+      beam.rotation.y = rot;
+      beam.rotation.x = -0.06; // tilt slightly down toward the sea
+      beam.renderOrder = 3;
+      this.beams.add(beam);
+    }
+    this.beams.visible = false;
+    this.lamp.add(this.beams);
+    // Soft halo around the lantern.
+    const haloCanvas = document.createElement('canvas');
+    haloCanvas.width = haloCanvas.height = 64;
+    const hctx = haloCanvas.getContext('2d')!;
+    const grad = hctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgba(255,240,200,1)');
+    grad.addColorStop(0.3, 'rgba(255,214,140,0.45)');
+    grad.addColorStop(1, 'rgba(255,200,120,0)');
+    hctx.fillStyle = grad;
+    hctx.fillRect(0, 0, 64, 64);
+    const haloTex = this.track(new THREE.CanvasTexture(haloCanvas));
+    haloTex.colorSpace = THREE.SRGBColorSpace;
+    this.halo = new THREE.Sprite(
+      this.track(new THREE.SpriteMaterial({ map: haloTex, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 })),
+    );
+    this.halo.scale.setScalar(7);
+    this.halo.position.y = top + 0.85;
+    this.halo.visible = false;
+    this.group.add(this.halo);
+    // Added from the start (at zero) so lighting it later doesn't recompile every shader.
+    this.light = new THREE.PointLight('#ffcf85', 0, 60, 1.4);
+    this.light.position.y = top + 0.85;
+    this.group.add(this.light);
 
     // Keeper's hut beside the tower.
     const hut = new THREE.Group();
@@ -172,6 +234,19 @@ export class Lighthouse {
   private track<T extends { dispose(): void }>(d: T): T {
     this.disposables.push(d);
     return d;
+  }
+
+  /** 0 = dark (daytime, unlit), 1 = fully relit. */
+  setLight(level: number): void {
+    if (level === this.lightLevel) return;
+    this.lightLevel = level;
+    this.glass.emissiveIntensity = 0.05 + level * 1.6;
+    this.lampMat.emissiveIntensity = level * 3;
+    this.beamMat.uniforms.uOpacity.value = level;
+    this.beams.visible = level > 0.01;
+    this.light.intensity = level * 70;
+    this.halo.visible = level > 0.01;
+    this.halo.material.opacity = level;
   }
 
   update(_dt: number, time: number): void {

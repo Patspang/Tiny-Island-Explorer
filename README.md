@@ -1,6 +1,6 @@
 # Tiny Island Explorer
 
-A small third-person exploration game: walk, run and jump across a stylised island and climb the hill to the old lighthouse. Built with Three.js, Rapier physics, Vite and TypeScript. Everything is procedural; no external assets or network calls at runtime.
+A small third-person exploration game: walk, run and jump across a stylised island, find the five lost pieces of the lighthouse lens, and bring the old lighthouse back to life. Built with Three.js, Rapier physics, Vite and TypeScript. Everything is procedural; no external assets or network calls at runtime.
 
 **Play online:** https://patspang.github.io/Tiny-Island-Explorer/ (published automatically from `main`).
 
