@@ -89,6 +89,8 @@ export class Atmosphere {
           horizon: { value: SKY.horizon.clone() },
           haze: { value: SKY.haze.clone() },
           sunDir: { value: SUN_DIRECTION },
+          uTime: { value: 0 },
+          uCloud: { value: new THREE.Color('#ffffff') },
         },
         vertexShader: /* glsl */ `
           varying vec3 vDir;
@@ -99,7 +101,18 @@ export class Atmosphere {
           }`,
         fragmentShader: /* glsl */ `
           uniform vec3 zenith; uniform vec3 horizon; uniform vec3 haze; uniform vec3 sunDir;
+          uniform float uTime; uniform vec3 uCloud;
           varying vec3 vDir;
+          float sh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          float sn(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(sh(i), sh(i + vec2(1, 0)), f.x), mix(sh(i + vec2(0, 1)), sh(i + vec2(1, 1)), f.x), f.y);
+          }
+          float sfbm(vec2 p) {
+            float a = 0.5; float s = 0.0;
+            for (int i = 0; i < 5; i++) { s += a * sn(p); p = p * 2.03 + 11.7; a *= 0.5; }
+            return s;
+          }
           void main() {
             vec3 d = normalize(vDir);
             float h = clamp(d.y, -1.0, 1.0);
@@ -108,6 +121,16 @@ export class Atmosphere {
             float s = max(dot(d, sunDir), 0.0);
             col = mix(col, haze, pow(s, 6.0) * 0.45 * (1.0 - up * 0.6));
             col += vec3(1.0, 0.92, 0.75) * pow(s, 400.0) * 3.0;
+            // Soft cumulus layer: project onto a plane above, drift slowly, fade to the horizon.
+            if (h > 0.0) {
+              vec2 cp = d.xz / (h + 0.12) * 1.1 + vec2(uTime * 0.006, uTime * 0.002);
+              float base = sfbm(cp);
+              float cover = smoothstep(0.52, 0.78, base) * smoothstep(0.0, 0.18, h);
+              float shade = sfbm(cp + sunDir.xz * 0.08);
+              vec3 cloudCol = mix(uCloud, uCloud * vec3(0.72, 0.76, 0.86), smoothstep(0.45, 0.8, shade));
+              cloudCol += vec3(1.0, 0.9, 0.75) * pow(s, 8.0) * 0.3;
+              col = mix(col, cloudCol, cover * 0.85);
+            }
             col = mix(col, horizon * 0.95, smoothstep(0.02, -0.1, h));
             gl_FragColor = vec4(col, 1.0);
             #include <tonemapping_fragment>
@@ -131,7 +154,8 @@ export class Atmosphere {
   }
 
   /** Keep the shadow box centred on the player, snapped to texels to avoid shimmering. */
-  update(focus: THREE.Vector3, cameraPosition: THREE.Vector3): void {
+  update(focus: THREE.Vector3, cameraPosition: THREE.Vector3, time = 0): void {
+    this.skyUniforms.uTime.value = time;
     const t = this.shadowTexel;
     const a = Math.round(focus.dot(this.lightRight) / t) * t;
     const b = Math.round(focus.dot(this.lightUp) / t) * t;
@@ -160,6 +184,7 @@ export class Atmosphere {
     (this.skyUniforms.horizon.value as THREE.Color).lerpColors(SKY.horizon, DUSK.horizon, t);
     (this.skyUniforms.haze.value as THREE.Color).lerpColors(SKY.haze, DUSK.haze, t);
     this.horizon.lerpColors(SKY.horizon, DUSK.horizon, t);
+    (this.skyUniforms.uCloud.value as THREE.Color).set('#ffffff').lerp(new THREE.Color('#f6a98a'), t);
     (this.scene.fog as THREE.Fog).color.lerpColors(SKY.fog, DUSK.fog, t);
     (this.scene.background as THREE.Color).copy(this.horizon);
   }

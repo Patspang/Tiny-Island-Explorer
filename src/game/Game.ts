@@ -169,7 +169,7 @@ export class Game {
   private onResize = () => {
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, RENDER.maxPixelRatio));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, RENDER.maxPixelRatio, this.pixelRatioCap));
     this.renderer.setSize(w, h, false);
     this.followCamera.setAspect(w / h);
   };
@@ -242,7 +242,7 @@ export class Game {
     this.pendingJump = false;
 
     this.updateQuestPresentation(frameDt);
-    this.atmosphere.update(this.renderFeet, this.followCamera.camera.position);
+    this.atmosphere.update(this.renderFeet, this.followCamera.camera.position, this.renderTime);
     this.world.update(frameDt, this.renderTime, this.followCamera.camera);
     this.renderer.render(this.scene, this.followCamera.camera);
   }
@@ -296,6 +296,24 @@ export class Game {
       this.fps = this.fpsFrames / this.fpsTime;
       this.fpsFrames = 0;
       this.fpsTime = 0;
+      this.adaptResolution();
+    }
+  }
+
+  /**
+   * Safety net for slower GPUs: if play stays below ~45 fps for a few seconds on a high-density
+   * screen, render at a lower pixel ratio. One-way and stepwise, so it never oscillates.
+   */
+  private slowSamples = 0;
+  private pixelRatioCap = Infinity;
+  private adaptResolution(): void {
+    if (this.state !== 'playing') return;
+    this.slowSamples = this.fps < 45 ? this.slowSamples + 1 : 0;
+    const ratio = this.renderer.getPixelRatio();
+    if (this.slowSamples >= 8 && ratio > 1) {
+      this.slowSamples = 0;
+      this.pixelRatioCap = Math.max(1, ratio - 0.5);
+      this.onResize();
     }
   }
 

@@ -75,6 +75,13 @@ export class Island implements GameWorld {
       goal: { x: door.x, y: door.y, z: door.z, radius: 1.9 },
     };
 
+    // Seat everything in the landscape with soft baked contact shadows.
+    this.terrain.bakeOcclusion([
+      ...this.environment.occluders,
+      { x: LIGHTHOUSE.x, z: LIGHTHOUSE.z, radius: 3.2, strength: 0.25 },
+      ...this.ruin.obstacles.map((o) => ({ x: o.x, z: o.z, radius: o.radius * 2, strength: 0.35 })),
+    ]);
+
     this.addBoundary(physics);
   }
 
@@ -127,7 +134,7 @@ export class Island implements GameWorld {
 
   update(dt: number, time: number, camera: THREE.Camera): void {
     this.ocean.update(time, camera);
-    this.environment.update(time);
+    this.environment.update(time, camera);
     this.lighthouse.update(dt, time);
   }
 

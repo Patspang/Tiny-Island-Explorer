@@ -1,16 +1,16 @@
 import { expect, test, type Page } from '@playwright/test';
 import { collectErrors, horizontal, sampleSim, snapshot, startGame, teleport, waitSim, type Snapshot } from './helpers';
 
-// Milestone B/D: behaviour on the real island. These tests drive the player with real
-// keyboard input; positions are checked against the physics world via the debug handle.
+// Milestone B/D: behaviour on the real island. Most tests drive the player with real keyboard
+// input; the long route walk uses the deterministic simulate hook (same physics and controller)
+// so it doesn't depend on how fast software WebGL renders. Positions are checked against the
+// physics world via the debug handle.
 
-/** Steer along waypoints by aiming the camera and holding forward (+ run). */
+/** Steer along waypoints: aim the camera at the next one and run forward in short slices. */
 async function followRoute(page: Page, points: Array<{ x: number; z: number }>, maxSimSeconds: number) {
   const samples: Snapshot[] = [];
   const start = (await snapshot(page)).simTime;
   let i = 0;
-  await page.keyboard.down('ShiftLeft');
-  await page.keyboard.down('KeyW');
   while (i < points.length) {
     const s = await snapshot(page);
     samples.push(s);
@@ -22,11 +22,13 @@ async function followRoute(page: Page, points: Array<{ x: number; z: number }>, 
     }
     // Camera yaw whose forward vector (-sin, -cos) points at the waypoint.
     const yaw = Math.atan2(-(p.x - s.feet.x), -(p.z - s.feet.z));
-    await page.evaluate((y) => window.__game!.setCameraYaw(y, 0.3), yaw);
-    await page.waitForTimeout(60);
+    await page.evaluate((y) => {
+      window.__game!.setCameraYaw(y, 0.3);
+      window.__game!.simulate(0.2, { y: 1, run: true });
+    }, yaw);
+    // Let a frame render so the follow camera (checked below) keeps up.
+    await page.waitForTimeout(20);
   }
-  await page.keyboard.up('KeyW');
-  await page.keyboard.up('ShiftLeft');
   return { samples, reached: i >= points.length };
 }
 
