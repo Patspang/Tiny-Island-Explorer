@@ -4,11 +4,19 @@ import { FollowCamera } from '../camera/FollowCamera';
 import { GROUP, groups, PhysicsWorld } from '../physics/PhysicsWorld';
 import { PlayerController, PLAYER_CAPSULE_CENTER } from '../player/PlayerController';
 import { PlayerVisual } from '../player/PlayerVisual';
+import { Quest } from '../quest/Quest';
 import { Atmosphere } from '../world/Atmosphere';
 import type { GameWorld } from '../world/World';
 import { InputManager, type MoveInput } from './InputManager';
 
-export type GameState = 'title' | 'playing' | 'paused';
+/** 'overlay' = gameplay suspended behind a story screen (no pause menu). */
+export type GameState = 'title' | 'playing' | 'paused' | 'overlay';
+
+export type QuestUiEvent =
+  | { type: 'collect'; collected: number; total: number; label: string }
+  | { type: 'complete' }
+  | { type: 'finaleStart' }
+  | { type: 'done' };
 export type WorldFactory = (physics: PhysicsWorld, scene: THREE.Scene) => GameWorld;
 
 const SHADOW_RAY_GROUPS = groups(0xffff, GROUP.terrain | GROUP.obstacle);
@@ -26,6 +34,9 @@ export class Game {
   readonly visual: PlayerVisual;
   readonly world: GameWorld;
   readonly atmosphere: Atmosphere;
+  readonly quest: Quest | null;
+  onQuest: (e: QuestUiEvent) => void = () => {};
+  private questDoneSent = false;
 
   state: GameState = 'title';
   onStateChange: (state: GameState) => void = () => {};
@@ -70,6 +81,16 @@ export class Game {
     this.visual = new PlayerVisual();
     this.scene.add(this.visual.root, this.visual.shadowMesh);
 
+    const layout = this.world.quest;
+    this.quest = layout
+      ? new Quest(layout.spots, layout.goal, {
+          onCollect: (collected, total, label) => this.onQuest({ type: 'collect', collected, total, label }),
+          onComplete: () => this.onQuest({ type: 'complete' }),
+          onFinaleStart: () => this.onQuest({ type: 'finaleStart' }),
+        })
+      : null;
+    if (this.quest) this.scene.add(this.quest.group);
+
     // Rapier's scene queries need one step before colliders are visible to the character controller.
     physics.step();
 
@@ -102,6 +123,15 @@ export class Game {
       this.followCamera.snapTo(this.world.spawn, this.world.spawnYaw, CAMERA.defaultPitch);
     }
     this.setState('playing');
+  }
+
+  /** Suspend play behind a story overlay (e.g. the finale screen). */
+  showOverlay(): void {
+    if (this.state === 'playing') this.setState('overlay');
+  }
+
+  resume(): void {
+    if (this.state === 'paused' || this.state === 'overlay') this.setState('playing');
   }
 
   togglePause(): void {
@@ -148,6 +178,7 @@ export class Game {
       while (this.accumulator >= PHYSICS.step && steps < PHYSICS.maxStepsPerFrame) {
         this.input.read(this.moveInput);
         this.player.fixedUpdate(PHYSICS.step, this.moveInput, this.followCamera.movementYaw);
+        this.quest?.fixedUpdate(PHYSICS.step, this.player.position);
         this.physics.step();
         this.accumulator -= PHYSICS.step;
         this.simTime += PHYSICS.step;
@@ -200,9 +231,23 @@ export class Game {
     this.pendingImpact = 0;
     this.pendingJump = false;
 
+    this.updateQuestPresentation(frameDt);
     this.atmosphere.update(this.renderFeet, this.followCamera.camera.position);
     this.world.update(frameDt, this.renderTime, this.followCamera.camera);
     this.renderer.render(this.scene, this.followCamera.camera);
+  }
+
+  private updateQuestPresentation(dt: number): void {
+    const q = this.quest;
+    if (!q) return;
+    q.update(dt, this.renderTime, this.followCamera.camera.position);
+    this.world.setLighthouseLight?.(q.lightLevel);
+    this.atmosphere.setDusk(q.duskLevel);
+    this.world.setDusk?.(q.duskLevel, this.atmosphere.horizon);
+    if (q.state === 'done' && !this.questDoneSent) {
+      this.questDoneSent = true;
+      this.onQuest({ type: 'done' });
+    }
   }
 
   // One-step events from physics, latched until the next rendered frame.
@@ -245,6 +290,7 @@ export class Game {
     this.player.dispose();
     this.visual.dispose();
     this.world.dispose();
+    this.quest?.dispose();
     this.atmosphere.dispose();
     this.timer.dispose();
     this.renderer.dispose();

@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { GROUP, groups, type PhysicsWorld } from '../physics/PhysicsWorld';
 import { Environment } from './Environment';
-import { coastDistance, coastRadius, heightAt, LIGHTHOUSE, normalAt, PATH_POINTS, SPAWN } from './IslandShape';
+import type { QuestGoal, QuestPieceSpot } from '../quest/Quest';
+import { coastDistance, coastRadius, heightAt, LIGHTHOUSE, normalAt, PATH_POINTS, QUEST_SPOTS, SPAWN } from './IslandShape';
 import { Lighthouse } from './Lighthouse';
 import { Ocean } from './Ocean';
+import { Ruin } from './Ruin';
 import { Terrain } from './Terrain';
 import type { GameWorld, ObstacleInfo } from './World';
 
@@ -18,11 +20,13 @@ export class Island implements GameWorld {
   readonly spawnYaw: number;
   readonly obstacles: ObstacleInfo[] = [];
   readonly route = PATH_POINTS;
+  readonly quest: { spots: QuestPieceSpot[]; goal: QuestGoal };
 
   private readonly terrain: Terrain;
   private readonly ocean: Ocean;
   private readonly lighthouse: Lighthouse;
   private readonly environment: Environment;
+  private readonly ruin: Ruin;
   private readonly n = { x: 0, y: 1, z: 0 };
 
   constructor(physics: PhysicsWorld) {
@@ -47,7 +51,28 @@ export class Island implements GameWorld {
     this.group.add(this.environment.group);
     this.obstacles.push(...this.environment.obstacles);
 
+    this.ruin = new Ruin(physics);
+    this.group.add(this.ruin.group);
+    this.obstacles.push(...this.ruin.obstacles);
+
+    this.quest = {
+      spots: QUEST_SPOTS.map((q) => ({
+        id: q.id,
+        label: q.label,
+        position: new THREE.Vector3(q.x, heightAt(q.x, q.z) + q.lift, q.z),
+      })),
+      goal: { x: LIGHTHOUSE.x, y: LIGHTHOUSE.y, z: LIGHTHOUSE.z, radius: 7 },
+    };
+
     this.addBoundary(physics);
+  }
+
+  setLighthouseLight(level: number): void {
+    this.lighthouse.setLight(level);
+  }
+
+  setDusk(t: number, horizon: THREE.Color): void {
+    this.ocean.setDusk(t, horizon);
   }
 
   private addBoundary(physics: PhysicsWorld): void {
@@ -96,5 +121,6 @@ export class Island implements GameWorld {
     this.ocean.dispose();
     this.lighthouse.dispose();
     this.environment.dispose();
+    this.ruin.dispose();
   }
 }

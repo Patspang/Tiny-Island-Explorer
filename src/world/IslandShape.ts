@@ -197,3 +197,26 @@ export const LIGHTHOUSE = {
 export function cliffWeight(x: number, z: number): number {
   return cliffWeightAtAngle(Math.atan2(z, x));
 }
+
+// --- Stage 2 quest: where the lost lens pieces lie ------------------------------------------
+
+export interface QuestSpot {
+  id: string;
+  /** Short description for hints/debugging. */
+  label: string;
+  x: number;
+  z: number;
+  /** Height of the piece above the ground (the ruin piece sits on top of the ruin). */
+  lift: number;
+}
+
+/** The old stone ruin: its top is out of step reach, so the piece on it needs a jump. */
+export const RUIN = { x: 24, z: 6, height: 1.0, halfSize: 0.8 } as const;
+
+export const QUEST_SPOTS: ReadonlyArray<QuestSpot> = [
+  { id: 'cove', label: 'western beach cove', x: -51.7, z: 2.2, lift: 0.9 },
+  { id: 'cliff', label: 'north-east cliff top', x: 40.8, z: -27.9, lift: 0.9 },
+  { id: 'ruin', label: 'top of the old ruin', x: RUIN.x, z: RUIN.z, lift: RUIN.height + 0.75 },
+  { id: 'woods', label: 'woodland clearing', x: -28, z: 8, lift: 0.9 },
+  { id: 'hill', label: 'lighthouse hill shoulder', x: -5, z: -30, lift: 0.9 },
+];

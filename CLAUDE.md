@@ -4,14 +4,13 @@ A third-person exploration game set on a small stylized island. This is a game, 
 
 **Visual target:** premium animated-film look — readable silhouettes, warm directional light, saturated-but-controlled palette, soft shadows, deliberate composition. Not "default Three.js scene with noise terrain".
 
-## Stage 1 scope (current)
+## Scope
 
-1. One island: terrain, coastline, water, a few landmarks, sparse deliberate vegetation.
-2. Player capsule with walk/run, jump, gravity, grounding, slope limits, terrain + obstacle collision.
-3. Third-person follow camera with smoothing and no terrain clipping; camera-relative movement.
-4. Fall/out-of-bounds recovery (respawn).
+**Stage 1 (done):** one island; capsule player (walk/run/jump, slopes, collision); third-person camera; fall recovery.
 
-Nothing else. No inventory, NPCs, quests, audio systems, save games, or multiplayer until Stage 1 is stable and verified. If a request implies a new system, say so and ask.
+**Stage 2 (current): lighthouse quest.** Five lens pieces (`QUEST_SPOTS` in `IslandShape.ts`, one on a ruin that needs a jump) → HUD counter → reach the lighthouse → lamp relights and the scene blends to dusk → finale screen. Logic in `src/quest/Quest.ts` (runs in the fixed step), presentation in `Lighthouse.setLight`, `Atmosphere.setDusk`, `Ocean.setDusk`, `ui/Overlays.ts`.
+
+Not yet: saving progress, sound, animated (rigged) character, inventory, NPCs, multiple islands. If a request implies one of these, say so and ask.
 
 ## Stack
 

@@ -8,6 +8,17 @@ export const SKY = {
   fog: new THREE.Color('#b9dbe8'),
 };
 
+/** Dusk palette the scene blends toward during the lighthouse finale. */
+const DUSK = {
+  zenith: new THREE.Color('#2b3f7d'),
+  horizon: new THREE.Color('#f3b07c'),
+  haze: new THREE.Color('#ff8d52'),
+  fog: new THREE.Color('#d9a487'),
+  sun: new THREE.Color('#ff9a5c'),
+  hemiSky: new THREE.Color('#8492c8'),
+  hemiGround: new THREE.Color('#6e5a48'),
+};
+
 /** Direction the sunlight comes *from* (warm late-morning sun). */
 export const SUN_DIRECTION = new THREE.Vector3(0.55, 0.62, 0.42).normalize();
 
@@ -26,8 +37,21 @@ export class Atmosphere {
   private readonly lightUp = new THREE.Vector3();
   private readonly lightFwd = SUN_DIRECTION.clone().negate();
   private readonly snapped = new THREE.Vector3();
+  private readonly day: {
+    sun: THREE.Color;
+    sunIntensity: number;
+    hemiSky: THREE.Color;
+    hemiGround: THREE.Color;
+    hemiIntensity: number;
+  };
+  private readonly skyUniforms: Record<string, THREE.IUniform>;
+  private readonly scene: THREE.Scene;
+  /** Current sky horizon colour (the ocean uses it for reflections). */
+  readonly horizon = SKY.horizon.clone();
+  private dusk = 0;
 
   constructor(scene: THREE.Scene) {
+    this.scene = scene;
     scene.fog = new THREE.Fog(SKY.fog, 90, 520);
     scene.background = SKY.horizon.clone();
 
@@ -61,9 +85,9 @@ export class Atmosphere {
         depthWrite: false,
         fog: false,
         uniforms: {
-          zenith: { value: SKY.zenith },
-          horizon: { value: SKY.horizon },
-          haze: { value: SKY.haze },
+          zenith: { value: SKY.zenith.clone() },
+          horizon: { value: SKY.horizon.clone() },
+          haze: { value: SKY.haze.clone() },
           sunDir: { value: SUN_DIRECTION },
         },
         vertexShader: /* glsl */ `
@@ -91,6 +115,14 @@ export class Atmosphere {
           }`,
       }),
     );
+    this.skyUniforms = (this.sky.material as THREE.ShaderMaterial).uniforms;
+    this.day = {
+      sun: this.sun.color.clone(),
+      sunIntensity: this.sun.intensity,
+      hemiSky: this.hemi.color.clone(),
+      hemiGround: this.hemi.groundColor.clone(),
+      hemiIntensity: this.hemi.intensity,
+    };
     this.sky.renderOrder = -1;
     this.sky.frustumCulled = false;
     this.group.add(this.sky);
@@ -112,6 +144,24 @@ export class Atmosphere {
     this.sun.target.position.copy(this.snapped);
     this.sun.position.copy(this.snapped).addScaledVector(SUN_DIRECTION, 100);
     this.sky.position.copy(cameraPosition);
+  }
+
+  /** Blend the whole sky and lighting from day (0) to dusk (1). */
+  setDusk(t: number): void {
+    if (t === this.dusk) return;
+    this.dusk = t;
+    const d = this.day;
+    this.sun.color.lerpColors(d.sun, DUSK.sun, t);
+    this.sun.intensity = THREE.MathUtils.lerp(d.sunIntensity, 1.5, t);
+    this.hemi.color.lerpColors(d.hemiSky, DUSK.hemiSky, t);
+    this.hemi.groundColor.lerpColors(d.hemiGround, DUSK.hemiGround, t);
+    this.hemi.intensity = THREE.MathUtils.lerp(d.hemiIntensity, 0.7, t);
+    (this.skyUniforms.zenith.value as THREE.Color).lerpColors(SKY.zenith, DUSK.zenith, t);
+    (this.skyUniforms.horizon.value as THREE.Color).lerpColors(SKY.horizon, DUSK.horizon, t);
+    (this.skyUniforms.haze.value as THREE.Color).lerpColors(SKY.haze, DUSK.haze, t);
+    this.horizon.lerpColors(SKY.horizon, DUSK.horizon, t);
+    (this.scene.fog as THREE.Fog).color.lerpColors(SKY.fog, DUSK.fog, t);
+    (this.scene.background as THREE.Color).copy(this.horizon);
   }
 
   dispose(): void {

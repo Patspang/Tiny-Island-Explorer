@@ -4,6 +4,12 @@ import { SKY, SUN_DIRECTION } from './Atmosphere';
 import { heightAt } from './IslandShape';
 
 const DEPTH_TEX_SIZE = 256;
+const DAY = {
+  shallow: new THREE.Color('#5fe0cf'),
+  mid: new THREE.Color('#1fa3b5'),
+  deep: new THREE.Color('#14608e'),
+  far: new THREE.Color('#0f4a78'),
+};
 /** Water depth (m) that maps to the top of the depth texture's range. */
 const DEPTH_RANGE = 8;
 
@@ -29,10 +35,10 @@ export class Ocean {
           uDepth: { value: null },
           uTerrainSize: { value: WORLD.terrainSize },
           uDepthRange: { value: DEPTH_RANGE },
-          uShallow: { value: new THREE.Color('#5fe0cf') },
-          uMid: { value: new THREE.Color('#1fa3b5') },
-          uDeep: { value: new THREE.Color('#14608e') },
-          uFar: { value: new THREE.Color('#0f4a78') },
+          uShallow: { value: DAY.shallow.clone() },
+          uMid: { value: DAY.mid.clone() },
+          uDeep: { value: DAY.deep.clone() },
+          uFar: { value: DAY.far.clone() },
           uFoam: { value: new THREE.Color('#f4fbf8') },
           uSky: { value: SKY.horizon.clone() },
           uSunDir: { value: SUN_DIRECTION.clone() },
@@ -163,6 +169,17 @@ export class Ocean {
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
     tex.needsUpdate = true;
     return tex;
+  }
+
+  /** Darken the water toward dusk and reflect the current sky colour. */
+  setDusk(t: number, horizon: THREE.Color): void {
+    const u = this.material.uniforms;
+    (u.uSky.value as THREE.Color).copy(horizon);
+    const k = 1 - 0.35 * t;
+    (u.uShallow.value as THREE.Color).copy(DAY.shallow).multiplyScalar(k);
+    (u.uMid.value as THREE.Color).copy(DAY.mid).multiplyScalar(k);
+    (u.uDeep.value as THREE.Color).copy(DAY.deep).multiplyScalar(k);
+    (u.uFar.value as THREE.Color).copy(DAY.far).multiplyScalar(k);
   }
 
   update(time: number, camera: THREE.Camera): void {

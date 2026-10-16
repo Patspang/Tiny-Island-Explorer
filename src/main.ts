@@ -2,7 +2,7 @@ import './styles.css';
 import { Game } from './game/Game';
 import { createDebugHandle, type DebugHandle } from './game/debug';
 import { PhysicsWorld } from './physics/PhysicsWorld';
-import { Hint, PauseMenu, StartScreen } from './ui/Overlays';
+import { FinaleScreen, Hint, PauseMenu, QuestHud, StartScreen } from './ui/Overlays';
 import { Island } from './world/Island';
 import { Sandbox } from './world/Sandbox';
 
@@ -19,18 +19,44 @@ async function boot(): Promise<void> {
 
   let game: Game | null = null;
   const start = new StartScreen(app, () => game?.play());
-  const pause = new PauseMenu(app, () => game?.togglePause());
+  const pause = new PauseMenu(app, () => game?.resume());
+  const finale = new FinaleScreen(app, () => {
+    finale.setVisible(false);
+    game?.resume();
+  });
   const hint = new Hint(app);
 
   try {
     const physics = await PhysicsWorld.create();
     game = new Game(app, physics, (p) => (mode === 'sandbox' ? new Sandbox(p) : new Island(p)));
+    const quest = game.quest;
+    const hud = quest ? new QuestHud(app, quest.total) : null;
+    game.onQuest = (e) => {
+      if (!hud || !quest) return;
+      if (e.type === 'collect') {
+        hud.setProgress(e.collected, e.total);
+        if (e.collected < e.total) hud.message(`Lens piece found! ${e.total - e.collected} to go.`);
+      } else if (e.type === 'complete') {
+        hud.message('The lens is whole again. Bring it to the lighthouse!', 5000);
+      } else if (e.type === 'finaleStart') {
+        hud.message('The lighthouse flickers to life…', 4500);
+      } else if (e.type === 'done') {
+        hud.setDone();
+        game?.showOverlay();
+        finale.setVisible(true);
+      }
+    };
+
     let started = false;
     game.onStateChange = (state) => {
       if (state !== 'title' && !started) {
         started = true;
         start.hide();
         hint.flash();
+        if (hud) {
+          hud.show();
+          hud.message('Find the five lost pieces of the lighthouse lens. Look for the glowing beams.', 5500);
+        }
       }
       pause.setVisible(state === 'paused');
       if (state !== 'playing') hint.hide();
