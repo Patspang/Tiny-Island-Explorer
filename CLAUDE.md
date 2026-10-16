@@ -48,6 +48,19 @@ The project is not scaffolded yet. Once it is, these are the expected scripts �
 - **Never claim something works without testing it.** Report what was verified and how: static review, type check/build, automated browser test, or actual play. A passing build is not gameplay verification.
 - Fix root causes. Do not tune constants at random to make a symptom disappear.
 
+## Git, CI, and deployment
+
+The owner is not a developer. Claude owns branching, commits, PRs, CI, and deploys; explain outcomes in plain language, not git jargon.
+
+- `main` is always playable and is what gets deployed. Never commit directly to `main`.
+- Work happens on a short-lived branch (the session's `claude/*` branch), one coherent change per PR into `main`.
+- Commits: small, each leaves the game building. Message style: `feat: ...`, `fix: ...`, `chore: ...`, `docs: ...` — imperative, says what and why.
+- PRs: plain-language summary of what changed for the player, plus what was verified and how (per the honesty rules above).
+- Merge only when CI (`Type check & build`) is green. Use squash merge. Delete the branch after.
+- After merge, `deploy.yml` publishes `main` to GitHub Pages. A bad deploy is fixed by reverting the PR, not by hotfixing on `main`.
+- Vite must use `base: './'` so the build works under the Pages sub-path.
+- Tag milestones (e.g. `stage-1`) once verified.
+
 ## Specialists
 
 - `gameplay-physics` agent — movement/collision/physics diagnosis.
