@@ -1,0 +1,248 @@
+import * as THREE from 'three';
+import { CAMERA, PHYSICS, PLAYER, RENDER } from '../config';
+import { FollowCamera } from '../camera/FollowCamera';
+import { GROUP, groups, PhysicsWorld } from '../physics/PhysicsWorld';
+import { PlayerController, PLAYER_CAPSULE_CENTER } from '../player/PlayerController';
+import { PlayerVisual } from '../player/PlayerVisual';
+import { Atmosphere } from '../world/Atmosphere';
+import type { GameWorld } from '../world/World';
+import { InputManager, type MoveInput } from './InputManager';
+
+export type GameState = 'title' | 'playing' | 'paused';
+export type WorldFactory = (physics: PhysicsWorld, scene: THREE.Scene) => GameWorld;
+
+const SHADOW_RAY_GROUPS = groups(0xffff, GROUP.terrain | GROUP.obstacle);
+
+/**
+ * Owns the renderer, the fixed-timestep loop and the wiring between input, physics,
+ * the player, the camera and the world. Gameplay rules live in the systems themselves.
+ */
+export class Game {
+  readonly renderer: THREE.WebGLRenderer;
+  readonly scene = new THREE.Scene();
+  readonly input: InputManager;
+  readonly followCamera: FollowCamera;
+  readonly player: PlayerController;
+  readonly visual: PlayerVisual;
+  readonly world: GameWorld;
+  readonly atmosphere: Atmosphere;
+
+  state: GameState = 'title';
+  onStateChange: (state: GameState) => void = () => {};
+
+  private readonly timer = new THREE.Timer();
+  private accumulator = 0;
+  private simTime = 0;
+  private renderTime = 0;
+  private frameHandle = 0;
+  private lastTeleportSeen = 0;
+  private readonly moveInput: MoveInput = { x: 0, y: 0, run: false, jumpHeld: false };
+  private readonly renderFeet = new THREE.Vector3();
+  private fpsFrames = 0;
+  private fpsTime = 0;
+  fps = 0;
+  stepsLastFrame = 0;
+
+  constructor(
+    private readonly container: HTMLElement,
+    readonly physics: PhysicsWorld,
+    worldFactory: WorldFactory,
+  ) {
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, RENDER.maxPixelRatio));
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = RENDER.exposure;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.domElement.classList.add('game-canvas');
+    container.appendChild(this.renderer.domElement);
+
+    this.atmosphere = new Atmosphere(this.scene);
+    this.world = worldFactory(physics, this.scene);
+    this.scene.add(this.world.group);
+
+    this.input = new InputManager();
+    this.followCamera = new FollowCamera(this.renderer.domElement, physics, (x, z) => this.world.groundHeight(x, z));
+    this.player = new PlayerController(physics, this.world.spawn, (x, y, z) => this.world.isSafeSpot(x, y, z));
+    this.visual = new PlayerVisual();
+    this.scene.add(this.visual.root, this.visual.shadowMesh);
+
+    // Rapier's scene queries need one step before colliders are visible to the character controller.
+    physics.step();
+
+    this.input.onAction('KeyR', () => {
+      if (this.state === 'playing') this.player.respawn();
+    });
+    this.input.onAction('Escape', () => this.togglePause());
+    this.input.onAction('KeyP', () => this.togglePause());
+    window.addEventListener('blur', this.onBlur);
+    window.addEventListener('resize', this.onResize);
+    this.onResize();
+
+    this.renderFeet.copy(this.world.spawn);
+    this.followCamera.snapTo(this.renderFeet, this.world.spawnYaw, CAMERA.defaultPitch);
+  }
+
+  start(): void {
+    this.timer.connect(document);
+    const frame = (timestamp: number) => {
+      this.frameHandle = requestAnimationFrame(frame);
+      this.timer.update(timestamp);
+      this.tick();
+    };
+    this.frameHandle = requestAnimationFrame(frame);
+  }
+
+  play(): void {
+    if (this.state === 'title') {
+      this.player.respawn();
+      this.followCamera.snapTo(this.world.spawn, this.world.spawnYaw, CAMERA.defaultPitch);
+    }
+    this.setState('playing');
+  }
+
+  togglePause(): void {
+    if (this.state === 'playing') this.setState('paused');
+    else if (this.state === 'paused') this.setState('playing');
+  }
+
+  private setState(state: GameState): void {
+    this.state = state;
+    const active = state === 'playing';
+    this.input.enabled = active;
+    this.followCamera.enabled = active;
+    if (!active) {
+      this.input.clear();
+      this.followCamera.cancelDrag();
+    }
+    this.onStateChange(state);
+  }
+
+  private onBlur = () => {
+    this.input.clear();
+    this.followCamera.cancelDrag();
+  };
+
+  private onResize = () => {
+    const w = this.container.clientWidth || window.innerWidth;
+    const h = this.container.clientHeight || window.innerHeight;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, RENDER.maxPixelRatio));
+    this.renderer.setSize(w, h, false);
+    this.followCamera.setAspect(w / h);
+  };
+
+  private tick(): void {
+    const frameDt = Math.min(this.timer.getDelta(), PHYSICS.maxFrameTime);
+    this.renderTime += frameDt;
+    this.trackFps(frameDt);
+
+    // --- Fixed-step simulation.
+    let steps = 0;
+    if (this.state === 'playing') {
+      this.accumulator += frameDt;
+      const presses = this.input.consumeJumpPresses();
+      if (presses > 0) this.player.requestJump();
+      while (this.accumulator >= PHYSICS.step && steps < PHYSICS.maxStepsPerFrame) {
+        this.input.read(this.moveInput);
+        this.player.fixedUpdate(PHYSICS.step, this.moveInput, this.followCamera.movementYaw);
+        this.physics.step();
+        this.accumulator -= PHYSICS.step;
+        this.simTime += PHYSICS.step;
+        steps++;
+        this.syncVisualEvents();
+      }
+      // Too far behind: drop the backlog rather than spiral.
+      if (steps === PHYSICS.maxStepsPerFrame) this.accumulator = 0;
+    } else {
+      this.accumulator = 0;
+    }
+    this.stepsLastFrame = steps;
+
+    // --- Interpolated render state.
+    const alpha = this.state === 'playing' ? this.accumulator / PHYSICS.step : 1;
+    const p = this.player;
+    this.renderFeet.lerpVectors(p.previousPosition, p.position, alpha);
+    // Drop the controller's skin gap so boots touch the ground.
+    this.renderFeet.y -= PLAYER_CAPSULE_CENTER + PLAYER.skinOffset;
+
+    const snap = p.teleportCount !== this.lastTeleportSeen;
+    if (snap) {
+      this.lastTeleportSeen = p.teleportCount;
+      this.followCamera.snapTo(this.renderFeet);
+    }
+
+    if (this.state === 'title') {
+      // Slow attract orbit behind the title screen.
+      this.followCamera.setTargetYaw(this.followCamera.yaw + frameDt * 0.12);
+    }
+    this.followCamera.update(frameDt, this.renderFeet);
+
+    const groundY = this.groundBelow(p.position);
+    this.visual.update(
+      frameDt,
+      {
+        feet: this.renderFeet,
+        velocity: p.actualVelocity,
+        grounded: p.grounded,
+        landedImpact: this.pendingImpact,
+        justJumped: this.pendingJump,
+        snap,
+      },
+      groundY,
+    );
+    this.pendingImpact = 0;
+    this.pendingJump = false;
+
+    this.atmosphere.update(this.renderFeet, this.followCamera.camera.position);
+    this.world.update(frameDt, this.renderTime, this.followCamera.camera);
+    this.renderer.render(this.scene, this.followCamera.camera);
+  }
+
+  // One-step events from physics, latched until the next rendered frame.
+  private pendingImpact = 0;
+  private pendingJump = false;
+  private syncVisualEvents(): void {
+    if (this.player.landedImpact > 0) this.pendingImpact = Math.max(this.pendingImpact, this.player.landedImpact);
+    if (this.player.justJumped) this.pendingJump = true;
+  }
+
+  private groundBelow(center: THREE.Vector3): number | null {
+    const hit = this.physics.castRay(center.x, center.y, center.z, 0, -1, 0, 12, SHADOW_RAY_GROUPS);
+    return hit === null ? null : center.y - hit;
+  }
+
+  private trackFps(dt: number): void {
+    this.fpsFrames++;
+    this.fpsTime += dt;
+    if (this.fpsTime >= 0.5) {
+      this.fps = this.fpsFrames / this.fpsTime;
+      this.fpsFrames = 0;
+      this.fpsTime = 0;
+    }
+  }
+
+  get simulationTime(): number {
+    return this.simTime;
+  }
+
+  get feetPosition(): THREE.Vector3 {
+    return this.renderFeet;
+  }
+
+  dispose(): void {
+    cancelAnimationFrame(this.frameHandle);
+    window.removeEventListener('blur', this.onBlur);
+    window.removeEventListener('resize', this.onResize);
+    this.input.dispose();
+    this.followCamera.dispose();
+    this.player.dispose();
+    this.visual.dispose();
+    this.world.dispose();
+    this.atmosphere.dispose();
+    this.timer.dispose();
+    this.renderer.dispose();
+    this.physics.dispose();
+    this.renderer.domElement.remove();
+  }
+}
