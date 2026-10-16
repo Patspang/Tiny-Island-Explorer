@@ -13,7 +13,7 @@ import {
   SPAWN,
 } from './IslandShape';
 import { createRng, fbm2, smoothstep } from './noise';
-import { bush, broadleafTree, flower, grassTuft, palmTree, pineTree, rock } from './props';
+import { broadleafTree, bush, driftwood, fern, flower, grassTuft, leafTexture, mushrooms, palmTree, pineTree, rock, starfish } from './props';
 import type { ObstacleInfo } from './World';
 
 interface Placement {
@@ -31,7 +31,13 @@ interface PropKind {
   material: THREE.Material;
   castShadow: boolean;
   placements: Placement[][];
+  /** Second mesh per variant drawn with the same placements (e.g. leaf cards). */
+  companion?: { geometries: THREE.BufferGeometry[]; material: THREE.Material; castShadow: boolean };
 }
+
+/** Grass is split into chunks so off-screen and distant patches can be skipped. */
+const GRASS_CHUNK = 24;
+const GRASS_DRAW_DISTANCE = 60;
 
 const n = { x: 0, y: 1, z: 0 };
 
@@ -45,6 +51,14 @@ function windMaterial(
   const mat = new THREE.MeshStandardMaterial(base);
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
+    // Foliage is two-sided but its normals describe the plant's volume (outward from a canopy,
+    // up for grass). Don't flip them on back faces, or every card seen from behind turns black.
+    if (mat.side === THREE.DoubleSide) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <normal_fragment_begin>',
+        '#include <normal_fragment_begin>\n  normal = normalize( vNormal );',
+      );
+    }
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nuniform float uTime;')
       .replace(
@@ -64,7 +78,7 @@ function windMaterial(
         }`,
       );
   };
-  mat.customProgramCacheKey = () => `wind-${strength}-${start}`;
+  mat.customProgramCacheKey = () => `wind-${strength}-${start}-${mat.side}`;
   return mat;
 }
 
@@ -76,9 +90,12 @@ function windMaterial(
 export class Environment {
   readonly group = new THREE.Group();
   readonly obstacles: ObstacleInfo[] = [];
+  /** Ground darkening under props (baked into the terrain colours). */
+  readonly occluders: Array<{ x: number; z: number; radius: number; strength: number }> = [];
   private readonly time = { value: 0 };
   private readonly disposables: Array<{ dispose(): void }> = [];
   private readonly occupied: Array<{ x: number; z: number; r: number }> = [];
+  private readonly grassChunks: Array<{ mesh: THREE.InstancedMesh; centre: THREE.Vector3 }> = [];
 
   constructor(physics: PhysicsWorld) {
     const rng = createRng(4242);
@@ -93,10 +110,40 @@ export class Environment {
     const grassMat = this.track(windMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide }, 0.35, 0, this.time));
     const rockMat = this.track(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 }));
 
-    const broadleaf: PropKind = { geometries: [11, 23, 37, 51].map(broadleafTree), material: foliage, castShadow: true, placements: [] };
-    const pines: PropKind = { geometries: [5, 17, 29].map(pineTree), material: foliage, castShadow: true, placements: [] };
+    const leafTex = this.track(leafTexture());
+    const leafParams = { vertexColors: true, roughness: 0.8, map: leafTex, alphaTest: 0.5, side: THREE.DoubleSide, alphaToCoverage: true };
+    const leafMat = this.track(windMaterial(leafParams, 0.006, 2.2, this.time));
+    const bushLeafMat = this.track(windMaterial(leafParams, 0.03, 0.3, this.time));
+    const fernMat = this.track(windMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }, 0.08, 0.05, this.time));
+    const trees = [11, 23, 37, 51, 67].map(broadleafTree);
+    const bushProps = [8, 19, 33].map(bush);
+    const broadleaf: PropKind = {
+      geometries: trees.map((t) => t.core),
+      material: foliage,
+      castShadow: true,
+      placements: [],
+      companion: { geometries: trees.map((t) => t.cards), material: leafMat, castShadow: true },
+    };
+    const pineProps = [5, 17, 29].map(pineTree);
+    const pines: PropKind = {
+      geometries: pineProps.map((p) => p.core),
+      material: foliage,
+      castShadow: true,
+      placements: [],
+      companion: { geometries: pineProps.map((p) => p.cards), material: leafMat, castShadow: true },
+    };
     const palms: PropKind = { geometries: [3, 41, 77].map(palmTree), material: palmMat, castShadow: true, placements: [] };
-    const bushes: PropKind = { geometries: [8, 19, 33].map(bush), material: bushMat, castShadow: true, placements: [] };
+    const bushes: PropKind = {
+      geometries: bushProps.map((b) => b.core),
+      material: bushMat,
+      castShadow: true,
+      placements: [],
+      companion: { geometries: bushProps.map((b) => b.cards), material: bushLeafMat, castShadow: true },
+    };
+    const ferns: PropKind = { geometries: [5, 6, 7].map(fern), material: fernMat, castShadow: false, placements: [] };
+    const fungi: PropKind = { geometries: [3, 4, 9].map(mushrooms), material: rockMat, castShadow: false, placements: [] };
+    const beachwood: PropKind = { geometries: [21, 22].map(driftwood), material: rockMat, castShadow: true, placements: [] };
+    const stars: PropKind = { geometries: [1, 2, 3].map(starfish), material: rockMat, castShadow: false, placements: [] };
     const rocks: PropKind = { geometries: [2, 13, 31, 47].map((s) => rock(s)), material: rockMat, castShadow: true, placements: [] };
     const seaRocks: PropKind = { geometries: [61, 73].map((s) => rock(s, false)), material: rockMat, castShadow: true, placements: [] };
     const grass: PropKind = { geometries: [1, 2, 3].map(grassTuft), material: grassMat, castShadow: false, placements: [] };
@@ -106,9 +153,10 @@ export class Environment {
       castShadow: false,
       placements: [],
     };
-    const kinds = [broadleaf, pines, palms, bushes, rocks, seaRocks, grass, flowers];
-    for (const k of kinds) {
+    const kinds = [broadleaf, pines, palms, bushes, rocks, seaRocks, flowers, ferns, fungi, beachwood, stars];
+    for (const k of [...kinds, grass]) {
       for (const g of k.geometries) this.track(g);
+      for (const g of k.companion?.geometries ?? []) this.track(g);
       k.placements = k.geometries.map(() => []);
     }
 
@@ -148,6 +196,7 @@ export class Environment {
         const kind = usePine ? pines : broadleaf;
         const variant = Math.floor(rng() * kind.geometries.length);
         kind.placements[variant].push({ x, y: y - 0.15, z, rotY: rng() * Math.PI * 2, scale });
+        this.occluders.push({ x, z, radius: (usePine ? 1.5 : 2.0) * scale, strength: 0.38 });
         this.addTrunkCollider(physics, body, solid, x, y, z, (usePine ? 0.22 : 0.26) * scale, 3.2 * scale);
         i++;
       }
@@ -165,6 +214,7 @@ export class Environment {
       if (!this.reserve(x, z, 3)) continue;
       const variant = Math.floor(rng() * palms.geometries.length);
       palms.placements[variant].push({ x, y: y - 0.1, z, rotY: rng() * Math.PI * 2, scale: 0.85 + rng() * 0.35 });
+      this.occluders.push({ x, z, radius: 1.1, strength: 0.22 });
       this.addTrunkCollider(physics, body, solid, x, y, z, 0.22, 2.4);
       count++;
     }
@@ -185,6 +235,7 @@ export class Environment {
       // Tall enough with steep enough sides that the character controller can't walk up them.
       const p = { x, y: y - 0.2 * scale, z, rotY: rng() * Math.PI * 2, scale, sy: 1.25 + rng() * 0.45 };
       rocks.placements[variant].push(p);
+      this.occluders.push({ x, z, radius: scale * 1.1, strength: 0.5 });
       this.addRockCollider(physics, body, solid, rocks.geometries[variant], p);
       this.obstacles.push({ kind: 'rock', x, y, z, radius: scale * 0.85 });
       count++;
@@ -246,11 +297,12 @@ export class Environment {
       if (!this.reserve(x, z, 0.9 * scale)) continue;
       const variant = Math.floor(rng() * bushes.geometries.length);
       bushes.placements[variant].push({ x, y: y - 0.1, z, rotY: rng() * Math.PI * 2, scale });
+      this.occluders.push({ x, z, radius: 0.8 * scale, strength: 0.32 });
       count++;
     }
 
     // --- Grass tufts (meadows, via noise) and flower patches. Purely decorative.
-    for (let tries = 0, count = 0; count < 7000 && tries < 40000; tries++) {
+    for (let tries = 0, count = 0; count < 14000 && tries < 80000; tries++) {
       const x = (rng() - 0.5) * 130;
       const z = (rng() - 0.5) * 130;
       const meadow = fbm2(x / 14, z / 14, 2, 61);
@@ -258,7 +310,7 @@ export class Environment {
       const y = heightAt(x, z);
       if (!this.isGround(x, z, y, 1.45, 0.8, false) || distanceToPath(x, z) < 1.4) continue;
       const variant = Math.floor(rng() * grass.geometries.length);
-      grass.placements[variant].push({ x, y: y - 0.03, z, rotY: rng() * Math.PI * 2, scale: 0.7 + rng() * 0.8 });
+      grass.placements[variant].push({ x, y: y - 0.03, z, rotY: rng() * Math.PI * 2, scale: 0.6 + rng() * 0.5 });
       count++;
     }
     for (let patch = 0; patch < 40; patch++) {
@@ -278,7 +330,89 @@ export class Environment {
       }
     }
 
+    // --- Woodland floor: ferns and mushrooms around the woods.
+    for (const c of clusterCentres) {
+      for (let i = 0; i < 9; i++) {
+        const a = rng() * Math.PI * 2;
+        const r = 2 + Math.sqrt(rng()) * 9;
+        const x = c.x + Math.cos(a) * r;
+        const z = c.z + Math.sin(a) * r;
+        const y = heightAt(x, z);
+        if (!this.isGround(x, z, y, 1.6, 0.85, false) || distanceToPath(x, z) < 1.8) continue;
+        const variant = Math.floor(rng() * ferns.geometries.length);
+        ferns.placements[variant].push({ x, y: y - 0.03, z, rotY: rng() * Math.PI * 2, scale: 0.8 + rng() * 0.6 });
+      }
+      for (let i = 0; i < 3; i++) {
+        const a = rng() * Math.PI * 2;
+        const r = 1.5 + rng() * 7;
+        const x = c.x + Math.cos(a) * r;
+        const z = c.z + Math.sin(a) * r;
+        const y = heightAt(x, z);
+        if (!this.isGround(x, z, y, 1.6, 0.85, false) || distanceToPath(x, z) < 1.5) continue;
+        const variant = Math.floor(rng() * fungi.geometries.length);
+        fungi.placements[variant].push({ x, y: y - 0.01, z, rotY: rng() * Math.PI * 2, scale: 0.8 + rng() * 0.6 });
+      }
+    }
+
+    // --- Beachcombing: driftwood above the tide line, starfish on the wet sand.
+    for (let tries = 0, count = 0; count < 9 && tries < 600; tries++) {
+      const theta = rng() * Math.PI * 2;
+      if (cliffWeight(Math.cos(theta), Math.sin(theta)) > 0.05) continue;
+      const R = coastRadius(theta) * (0.86 + rng() * 0.06);
+      const x = Math.cos(theta) * R;
+      const z = Math.sin(theta) * R;
+      const y = heightAt(x, z);
+      if (y < 0.3 || y > 1.5 || distanceToPath(x, z) < 2.5 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 3) continue;
+      if (!this.reserve(x, z, 1.4)) continue;
+      const variant = Math.floor(rng() * beachwood.geometries.length);
+      beachwood.placements[variant].push({ x, y: y - 0.05, z, rotY: theta + Math.PI / 2 + (rng() - 0.5) * 0.8, scale: 0.9 + rng() * 0.3 });
+      count++;
+    }
+    for (let tries = 0, count = 0; count < 22 && tries < 1500; tries++) {
+      const theta = rng() * Math.PI * 2;
+      if (cliffWeight(Math.cos(theta), Math.sin(theta)) > 0.05) continue;
+      const R = coastRadius(theta) * (0.95 + rng() * 0.04);
+      const x = Math.cos(theta) * R;
+      const z = Math.sin(theta) * R;
+      const y = heightAt(x, z);
+      if (y < -0.25 || y > 0.45) continue;
+      const variant = Math.floor(rng() * stars.geometries.length);
+      stars.placements[variant].push({ x, y, z, rotY: rng() * Math.PI * 2, scale: 0.8 + rng() * 0.5 });
+      count++;
+    }
+
     for (const k of kinds) this.buildInstances(k);
+    this.buildGrassChunks(grass);
+  }
+
+  /** Grass in square chunks (one instanced mesh per chunk and variant) for distance culling. */
+  private buildGrassChunks(grass: PropKind): void {
+    const chunks = new Map<string, Placement[][]>();
+    grass.placements.forEach((list, variant) => {
+      for (const p of list) {
+        const key = `${Math.floor(p.x / GRASS_CHUNK)},${Math.floor(p.z / GRASS_CHUNK)}`;
+        let c = chunks.get(key);
+        if (!c) {
+          c = grass.geometries.map(() => []);
+          chunks.set(key, c);
+        }
+        c[variant].push(p);
+      }
+    });
+    for (const [key, lists] of chunks) {
+      const [cx, cz] = key.split(',').map(Number);
+      const centre = new THREE.Vector3((cx + 0.5) * GRASS_CHUNK, 0, (cz + 0.5) * GRASS_CHUNK);
+      lists.forEach((list, variant) => {
+        if (list.length === 0) return;
+        const mesh = new THREE.InstancedMesh(grass.geometries[variant], grass.material, list.length);
+        list.forEach((p, j) => mesh.setMatrixAt(j, this.matrixFor(p)));
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.computeBoundingSphere();
+        this.group.add(mesh);
+        this.grassChunks.push({ mesh, centre });
+        this.disposables.push({ dispose: () => mesh.dispose() });
+      });
+    }
   }
 
   private track<T extends { dispose(): void }>(d: T): T {
@@ -361,19 +495,26 @@ export class Environment {
   }
 
   private buildInstances(kind: PropKind): void {
-    kind.geometries.forEach((geo, i) => {
-      const list = kind.placements[i];
-      if (list.length === 0) return;
-      const mesh = new THREE.InstancedMesh(geo, kind.material, list.length);
-      list.forEach((p, j) => mesh.setMatrixAt(j, this.matrixFor(p)));
-      mesh.instanceMatrix.needsUpdate = true;
-      mesh.castShadow = kind.castShadow;
-      // Thin grass blades only produce shadow-map noise; they take their light from the ground.
-      mesh.receiveShadow = kind.castShadow;
-      mesh.computeBoundingSphere();
-      this.group.add(mesh);
-      this.disposables.push({ dispose: () => mesh.dispose() });
-    });
+    // Foliage (anything with leaf cards) shades itself via baked colours; receiving the cards'
+    // own shadows only speckles it with dark blotches.
+    const layers = [{ geometries: kind.geometries, material: kind.material, castShadow: kind.castShadow, receiveShadow: kind.castShadow && !kind.companion }];
+    // Leaf cards cast shadows but don't receive them: self-shadowing across thin cards reads as
+    // blotchy noise, and canopy shading is already baked into the card colours.
+    if (kind.companion) layers.push({ ...kind.companion, receiveShadow: false });
+    for (const layer of layers) {
+      layer.geometries.forEach((geo, i) => {
+        const list = kind.placements[i];
+        if (list.length === 0) return;
+        const mesh = new THREE.InstancedMesh(geo, layer.material, list.length);
+        list.forEach((p, j) => mesh.setMatrixAt(j, this.matrixFor(p)));
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.castShadow = layer.castShadow;
+        mesh.receiveShadow = layer.receiveShadow;
+        mesh.computeBoundingSphere();
+        this.group.add(mesh);
+        this.disposables.push({ dispose: () => mesh.dispose() });
+      });
+    }
   }
 
   /** Total number of placed instances (debugging/perf checks). */
@@ -385,8 +526,14 @@ export class Environment {
     return total;
   }
 
-  update(time: number): void {
+  update(time: number, camera?: THREE.Camera): void {
     this.time.value = time;
+    if (camera) {
+      const cx = camera.position.x;
+      const cz = camera.position.z;
+      const limit = GRASS_DRAW_DISTANCE + GRASS_CHUNK * 0.71;
+      for (const c of this.grassChunks) c.mesh.visible = Math.hypot(c.centre.x - cx, c.centre.z - cz) < limit;
+    }
   }
 
   dispose(): void {

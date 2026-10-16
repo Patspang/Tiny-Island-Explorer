@@ -20,6 +20,8 @@ const PALETTE = {
 };
 
 const tmp = new THREE.Color();
+/** Per-vertex material weights for the detail shader: sand, rock, path. */
+const weights = { sand: 0, rock: 0, path: 0 };
 const n = { x: 0, y: 1, z: 0 };
 
 function mixInto(target: THREE.Color, c: THREE.Color, w: number) {
@@ -70,6 +72,9 @@ function surfaceColor(x: number, z: number, h: number, ny: number, out: THREE.Co
   // Fine mottling so large areas don't read as flat gradients.
   const fine = fbm2(x / 2.3, z / 2.3, 2, 93);
   out.multiplyScalar(1 + fine * 0.09);
+  weights.sand = Math.max(sandW, smoothstep(0.35, -0.5, h));
+  weights.rock = rockW;
+  weights.path = p * (1 - rockW);
   return out;
 }
 
@@ -87,6 +92,7 @@ export class Terrain {
     const verts = seg + 1;
     const positions = new Float32Array(verts * verts * 3);
     const colors = new Float32Array(verts * verts * 3);
+    const surface = new Float32Array(verts * verts * 3);
     const color = new THREE.Color();
 
     for (let j = 0; j < verts; j++) {
@@ -103,6 +109,9 @@ export class Terrain {
         colors[k] = color.r;
         colors[k + 1] = color.g;
         colors[k + 2] = color.b;
+        surface[k] = weights.sand;
+        surface[k + 1] = weights.rock;
+        surface[k + 2] = weights.path;
       }
     }
 
@@ -127,6 +136,7 @@ export class Terrain {
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     this.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    this.geometry.setAttribute('surface', new THREE.BufferAttribute(surface, 3));
     this.geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     // Shade with normals of the actual triangles (analytic normals are sharper than the
     // mesh can represent and streak on cliffs).
@@ -138,9 +148,47 @@ export class Terrain {
       roughness: 0.93,
       metalness: 0,
     });
+    material.onBeforeCompile = addSurfaceDetail;
+    material.customProgramCacheKey = () => 'terrain-detail-v1';
     this.mesh = new THREE.Mesh(this.geometry, material);
     this.mesh.receiveShadow = true;
     this.mesh.name = 'terrain';
+  }
+
+  /**
+   * Darken the ground under and around trees, rocks and buildings: cheap baked ambient
+   * occlusion that seats props in the landscape instead of letting them float.
+   */
+  bakeOcclusion(occluders: ReadonlyArray<{ x: number; z: number; radius: number; strength: number }>): void {
+    const size = WORLD.terrainSize;
+    const seg = WORLD.terrainSegments;
+    const verts = seg + 1;
+    const cell = size / seg;
+    const col = this.geometry.getAttribute('color') as THREE.BufferAttribute;
+    const occ = new Float32Array(verts * verts).fill(1);
+    for (const o of occluders) {
+      const r = o.radius * 2.2;
+      const i0 = Math.max(0, Math.floor((o.x - r + size / 2) / cell));
+      const i1 = Math.min(seg, Math.ceil((o.x + r + size / 2) / cell));
+      const j0 = Math.max(0, Math.floor((o.z - r + size / 2) / cell));
+      const j1 = Math.min(seg, Math.ceil((o.z + r + size / 2) / cell));
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const x = -size / 2 + i * cell;
+          const z = -size / 2 + j * cell;
+          const d = Math.hypot(x - o.x, z - o.z) / r;
+          if (d >= 1) continue;
+          const k = j * verts + i;
+          const a = 1 - o.strength * (1 - d * d) * (1 - d * d);
+          occ[k] = Math.min(occ[k], a);
+        }
+      }
+    }
+    for (let k = 0; k < occ.length; k++) {
+      if (occ[k] === 1) continue;
+      col.setXYZ(k, col.getX(k) * occ[k], col.getY(k) * occ[k], col.getZ(k) * occ[k]);
+    }
+    col.needsUpdate = true;
   }
 
   /** Adds the matching trimesh collider. Uses the exact render vertices and triangles. */
@@ -158,4 +206,93 @@ export class Terrain {
     this.geometry.dispose();
     (this.mesh.material as THREE.Material).dispose();
   }
+}
+
+/**
+ * Procedural close-up detail on the terrain: sand ripples, grass mottling, rock cracks and path
+ * grit, shaded as real bumps (screen-space bump mapping) and faded out with distance so far
+ * terrain doesn't shimmer.
+ */
+function addSurfaceDetail(shader: THREE.WebGLProgramParametersWithUniforms): void {
+  shader.vertexShader = shader.vertexShader
+    .replace(
+      '#include <common>',
+      `#include <common>
+      attribute vec3 surface;
+      varying vec3 vSurface;
+      varying vec3 vWorldPos;
+      varying vec3 vWorldNormal;`,
+    )
+    .replace(
+      '#include <worldpos_vertex>',
+      `#include <worldpos_vertex>
+      vSurface = surface;
+      vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+      vWorldNormal = normalize(mat3(modelMatrix) * objectNormal);`,
+    );
+  shader.fragmentShader = shader.fragmentShader
+    .replace(
+      '#include <common>',
+      `#include <common>
+      varying vec3 vSurface;
+      varying vec3 vWorldPos;
+      varying vec3 vWorldNormal;
+      float tdHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float tdNoise(vec2 p) {
+        vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(tdHash(i), tdHash(i + vec2(1.0, 0.0)), f.x), mix(tdHash(i + vec2(0.0, 1.0)), tdHash(i + vec2(1.0, 1.0)), f.x), f.y);
+      }
+      float tdFbm(vec2 p) { return 0.5 * tdNoise(p) + 0.3 * tdNoise(p * 2.1 + 3.7) + 0.2 * tdNoise(p * 4.3 - 1.3); }
+      // Small-scale surface relief (metres) plus a colour tint, blended by material weights.
+      float tdHeight(vec3 wp, vec3 wn, vec3 w, out float tint) {
+        vec2 p = wp.xz;
+        float grassW = clamp(1.0 - w.x - w.y - w.z, 0.0, 1.0);
+        // Grass: soft clumps with a faint grain.
+        float clumps = tdFbm(p * 1.1);
+        float grassH = clumps * 0.035 + tdNoise(p * 6.0) * 0.006;
+        // Sand: wind ripples, gently warped.
+        float warp = tdFbm(p * 0.35) * 6.0;
+        float ripples = sin(dot(p, vec2(2.1, 3.4)) * 1.6 + warp) * 0.5 + 0.5;
+        float sandH = ripples * 0.022 + tdNoise(p * 9.0) * 0.003;
+        // Rock: sampled across the face on steep ground (so cliffs aren't streaked), with
+        // horizontal strata and a few broad cracks.
+        float steep = 1.0 - clamp(abs(wn.y), 0.0, 1.0);
+        vec2 rp = mix(p, vec2(wp.x + wp.z, wp.y * 1.6), smoothstep(0.3, 0.7, steep));
+        float layers = tdFbm(rp * vec2(0.6, 1.8));
+        float ridged = 1.0 - abs(tdNoise(rp * 0.9 + 7.1) * 2.0 - 1.0);
+        float cracks = smoothstep(0.9, 0.985, ridged);
+        float rockH = layers * 0.09 + tdFbm(rp * 3.0) * 0.025 - cracks * 0.03;
+        // Path: packed earth with soft embedded stones.
+        float stones = smoothstep(0.58, 0.85, tdNoise(p * 2.6));
+        float pathH = stones * 0.018 + tdNoise(p * 7.0) * 0.004;
+        tint = grassW * (clumps - 0.5) * 0.18 + w.x * (ripples - 0.5) * 0.07 + w.y * ((layers - 0.5) * 0.25 - cracks * 0.16) + w.z * (stones * 0.1 - 0.02);
+        return grassW * grassH + w.x * sandH + w.y * rockH + w.z * pathH;
+      }
+      vec3 tdPerturb(vec3 surfPos, vec3 surfNorm, vec2 dHdxy, float faceDir) {
+        vec3 sx = dFdx(surfPos); vec3 sy = dFdy(surfPos);
+        vec3 r1 = cross(sy, surfNorm); vec3 r2 = cross(surfNorm, sx);
+        float det = dot(sx, r1) * faceDir;
+        vec3 grad = sign(det) * (dHdxy.x * r1 + dHdxy.y * r2);
+        return normalize(abs(det) * surfNorm - grad);
+      }`,
+    )
+    .replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>
+      float tdDist = length(vViewPosition);
+      float tdFade = 1.0 - smoothstep(14.0, 55.0, tdDist);
+      float tdTint;
+      float tdH = tdHeight(vWorldPos, normalize(vWorldNormal), vSurface, tdTint);
+      diffuseColor.rgb *= 1.0 + tdTint * mix(0.4, 1.0, tdFade);`,
+    )
+    .replace(
+      '#include <normal_fragment_maps>',
+      `#include <normal_fragment_maps>
+      {
+        vec2 dHdxy = vec2(dFdx(tdH), dFdy(tdH)) * tdFade * 1.3;
+        // Detail finer than a pixel turns to noise: back off where the height changes too fast.
+        dHdxy *= 1.0 - smoothstep(0.004, 0.02, length(dHdxy));
+        normal = tdPerturb(-vViewPosition, normal, dHdxy, faceDirection);
+      }`,
+    );
 }

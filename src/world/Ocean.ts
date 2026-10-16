@@ -140,7 +140,7 @@ export class Ocean {
     });
     this.material.uniforms.uDepth.value = this.depthTexture;
 
-    const geometry = new THREE.PlaneGeometry(WORLD.oceanSize, WORLD.oceanSize, 200, 200);
+    const geometry = new THREE.PlaneGeometry(WORLD.oceanSize, WORLD.oceanSize, 160, 160);
     geometry.rotateX(-Math.PI / 2);
     this.mesh = new THREE.Mesh(geometry, this.material);
     this.mesh.position.y = WORLD.waterLevel;
