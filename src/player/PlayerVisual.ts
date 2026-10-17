@@ -489,9 +489,11 @@ export class PlayerVisual {
     // The head is scaled up; keep the brim from turning into a sombrero.
     this.hat.scale.setScalar(0.95);
     this.head.add(this.hat);
-    part(geo(lathe([[0.0, 0.13], [0.09, 0.12], [0.135, 0.07], [0.15, 0.0], [0.152, -0.02]], 32)), hatMat, this.hat);
-    part(geo(lathe([[0.15, 0.0], [0.2, -0.01], [0.25, -0.012], [0.275, 0.005], [0.28, 0.02]], 40, 24)), hatMat, this.hat);
-    part(geo(lathe([[0.28, 0.018], [0.25, -0.022], [0.2, -0.025], [0.15, -0.015]], 40, 16)), hatMat, this.hat);
+    // Lathe faces point outward only when the profile runs bottom-to-top / outside-to-inside,
+    // so each profile is listed in that order (crown and brim top visible from above).
+    part(geo(lathe([[0.152, -0.02], [0.15, 0.0], [0.135, 0.07], [0.09, 0.12], [0.0, 0.13]], 32)), hatMat, this.hat);
+    part(geo(lathe([[0.28, 0.02], [0.275, 0.005], [0.25, -0.012], [0.2, -0.01], [0.15, 0.0]], 40, 24)), hatMat, this.hat);
+    part(geo(lathe([[0.15, -0.015], [0.2, -0.025], [0.25, -0.022], [0.28, 0.018]], 40, 16)), hatMat, this.hat);
     part(geo(lathe([[0.152, -0.005], [0.155, 0.02], [0.152, 0.045]], 32, 8)), hatBand, this.hat);
 
     // Soft contact shadow so the character always reads as grounded.
