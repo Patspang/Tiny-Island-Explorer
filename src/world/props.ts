@@ -102,7 +102,7 @@ interface CanopyBlob {
  * into vertex colours across the whole canopy (lit, warm crown; cool, dark underside; darker
  * toward the middle) so every puff shades as part of one volume.
  */
-function canopy(rng: Rng, blobs: CanopyBlob[], puffsPerBlob: number, seed: number, detail = 1): THREE.BufferGeometry[] {
+function canopy(rng: Rng, blobs: CanopyBlob[], puffsPerBlob: number, seed: number, detail = 1, brightness = 1): THREE.BufferGeometry[] {
   const centroid = new THREE.Vector3();
   for (const b of blobs) centroid.add(b.c);
   centroid.divideScalar(blobs.length);
@@ -146,7 +146,7 @@ function canopy(rng: Rng, blobs: CanopyBlob[], puffsPerBlob: number, seed: numbe
       c.setRGB(col.getX(i), col.getY(i), col.getZ(i));
       // Interior and underside fall off toward a cool shadow green; the crown warms up.
       const light = THREE.MathUtils.clamp(0.35 + 0.4 * height + 0.25 * out + 0.2 * up, 0, 1.15);
-      c.multiplyScalar(0.45 + 0.6 * light);
+      c.multiplyScalar((0.45 + 0.6 * light) * brightness);
       c.lerp(cool, THREE.MathUtils.clamp(0.4 - light * 0.5, 0, 0.3));
       c.lerp(warm, THREE.MathUtils.clamp((up - 0.4) * 0.35 * height, 0, 0.25));
       col.setXYZ(i, c.r, c.g, c.b);
@@ -155,8 +155,90 @@ function canopy(rng: Rng, blobs: CanopyBlob[], puffsPerBlob: number, seed: numbe
   return parts;
 }
 
-/** Broadleaf tree: flared, bent trunk that forks into branches carrying puffy canopy clusters. */
-export function broadleafTree(seed: number): THREE.BufferGeometry {
+export interface FoliageProp {
+  /** Opaque parts: trunk, branches and the dark inner canopy volume. */
+  core: THREE.BufferGeometry;
+  /** Camera-facing leaf cards over the canopy (see `fluffCards`). */
+  cards: THREE.BufferGeometry;
+}
+
+/**
+ * Fluffy canopy shell: leaf-cluster cards scattered over the canopy blobs. Each card stores its
+ * centre in `position` and its corner offset in `corner`; the material turns every card to face
+ * the camera, so the canopy never shows cards edge-on. Normals are the blob's sphere normals,
+ * so the whole shell lights like one soft volume while its silhouette stays leafy.
+ */
+function fluffCards(rng: Rng, blobs: CanopyBlob[], density: number, size: [number, number]): THREE.BufferGeometry {
+  let top = -Infinity;
+  let bottom = Infinity;
+  for (const b of blobs) {
+    top = Math.max(top, b.c.y + b.r);
+    bottom = Math.min(bottom, b.c.y - b.r);
+  }
+  const pos: number[] = [];
+  const corner: number[] = [];
+  const nor: number[] = [];
+  const uv: number[] = [];
+  const col: number[] = [];
+  const idx: number[] = [];
+  const shadow = new THREE.Color('#2b6142');
+  const lit = new THREE.Color('#8fd14f');
+  const dir = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  const c = new THREE.Color();
+  let maxSize = 0;
+  for (const b of blobs) {
+    const count = Math.round(density * b.r * b.r);
+    for (let i = 0; i < count; i++) {
+      dir.set(rng() * 2 - 1, rng() * 2 - 1, rng() * 2 - 1);
+      if (dir.lengthSq() < 1e-4) continue;
+      dir.normalize();
+      const depth = 0.7 + rng() * 0.3;
+      const p = b.c.clone().addScaledVector(dir, b.r * depth);
+      // Sphere normal, nudged up so the underside picks up some sky light instead of going black.
+      n.copy(dir).setY(dir.y + 0.25).normalize();
+      // Volumetric gradient: shadow green at the bottom of the canopy to bright yellow-green on
+      // top; cards deeper inside the blob are darker.
+      const height = THREE.MathUtils.clamp((p.y - bottom) / Math.max(0.01, top - bottom), 0, 1);
+      c.copy(shadow).lerp(lit, THREE.MathUtils.smoothstep(height, 0.05, 1) * (0.55 + 0.45 * Math.max(0, dir.y)));
+      c.lerp(b.color, 0.25).multiplyScalar(0.88 + 0.14 * (depth - 0.7) / 0.3);
+      c.offsetHSL((rng() - 0.5) * 0.015, 0, (rng() - 0.5) * 0.025);
+      const sz = (size[0] + rng() * (size[1] - size[0])) * 0.5;
+      maxSize = Math.max(maxSize, sz);
+      const spin = rng() * Math.PI * 2;
+      const cs = Math.cos(spin) * sz;
+      const sn = Math.sin(spin) * sz;
+      const base = pos.length / 3;
+      for (const [u, v] of [
+        [-1, -1],
+        [1, -1],
+        [1, 1],
+        [-1, 1],
+      ]) {
+        pos.push(p.x, p.y, p.z);
+        corner.push(u * cs - v * sn, u * sn + v * cs);
+        nor.push(n.x, n.y, n.z);
+        uv.push((u + 1) / 2, (v + 1) / 2);
+        col.push(c.r, c.g, c.b);
+      }
+      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('corner', new THREE.Float32BufferAttribute(corner, 2));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  g.computeBoundingSphere();
+  // Card centres alone under-estimate the bounds: pad by the largest card's half-diagonal.
+  g.boundingSphere!.radius += maxSize * Math.SQRT2;
+  return g;
+}
+
+/** Broadleaf tree: flared, bent trunk that forks into branches carrying fluffy canopy clusters. */
+export function broadleafTree(seed: number): FoliageProp {
   const rng = createRng(seed);
   const h = 2.3 + rng() * 0.8;
   const lean = 0.2 + rng() * 0.3;
@@ -185,8 +267,10 @@ export function broadleafTree(seed: number): THREE.BufferGeometry {
       color: baseColor.clone().offsetHSL((rng() - 0.5) * 0.03, 0, (rng() - 0.5) * 0.08),
     });
   }
-  parts.push(...canopy(rng, blobs, 4, seed, 2));
-  return merge(parts);
+  // Dark inner volume fills the gaps between cards; the cards carry the lit surface.
+  const inner = blobs.map((b) => ({ ...b, r: b.r * 0.72 }));
+  parts.push(...canopy(rng, inner, 3, seed, 1, 0.45));
+  return { core: merge(parts), cards: fluffCards(rng, blobs, 150, [0.75, 1.15]) };
 }
 
 /** Low bush: a few puffy clumps hugging the ground. */
@@ -555,6 +639,50 @@ function taperTube(
   }
   geo.computeVertexNormals();
   return geo;
+}
+
+/**
+ * Fluffy leaf-cluster texture: dozens of small leaves pointing outward around a solid middle,
+ * so alpha-tested cards get a soft, leafy edge. Near-white; cards are tinted by vertex colour.
+ */
+export function leafClusterTexture(): THREE.CanvasTexture {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const rng = createRng(91);
+  const mid = size / 2;
+  const leaf = (x: number, y: number, len: number, wid: number, rot: number, shade: number) => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    const g = ctx.createLinearGradient(0, 0, len, 0);
+    g.addColorStop(0, `rgb(${Math.round(222 * shade)},${Math.round(228 * shade)},${Math.round(212 * shade)})`);
+    g.addColorStop(1, `rgb(${Math.round(245 * shade)},${Math.round(248 * shade)},${Math.round(232 * shade)})`);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(len * 0.5, -wid, len, 0);
+    ctx.quadraticCurveTo(len * 0.5, wid, 0, 0);
+    ctx.fill();
+    ctx.restore();
+  };
+  // Solid middle so cards overlap without holes, then a ring of outward-pointing leaves that
+  // gives each card its scalloped, leafy silhouette.
+  ctx.fillStyle = 'rgb(236,240,226)';
+  ctx.beginPath();
+  ctx.arc(mid, mid, size * 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  for (let i = 0; i < 130; i++) {
+    const a = rng() * Math.PI * 2;
+    const r = size * (0.16 + rng() * 0.16);
+    const len = size * (0.08 + rng() * 0.05);
+    leaf(mid + Math.cos(a) * r, mid + Math.sin(a) * r, len, len * 0.42, a + (rng() - 0.5) * 0.7, 0.86 + rng() * 0.14);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
 }
 
 /** Fern: a rosette of arching fronds made of small leaflets. */

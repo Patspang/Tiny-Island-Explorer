@@ -13,7 +13,7 @@ import {
   SPAWN,
 } from './IslandShape';
 import { createRng, fbm2, smoothstep } from './noise';
-import { broadleafTree, bush, driftwood, fern, flower, grassTuft, mushrooms, palmTree, pineTree, rock, starfish } from './props';
+import { broadleafTree, bush, driftwood, fern, flower, grassTuft, leafClusterTexture, mushrooms, palmTree, pineTree, rock, starfish } from './props';
 import type { ObstacleInfo } from './World';
 
 interface Placement {
@@ -31,6 +31,10 @@ interface PropKind {
   material: THREE.Material;
   castShadow: boolean;
   placements: Placement[][];
+  /** Defaults to `castShadow`. */
+  receiveShadow?: boolean;
+  /** Shadow-pass material for geometry the vertex shader reshapes (billboards). */
+  depthMaterial?: THREE.Material;
 }
 
 /** Grass is split into chunks so off-screen and distant patches can be skipped. */
@@ -38,6 +42,23 @@ const GRASS_CHUNK = 24;
 const GRASS_DRAW_DISTANCE = 60;
 
 const n = { x: 0, y: 1, z: 0 };
+
+/** Vertex shader chunk: wind sway that grows with height above `start`. */
+function windChunk(strength: number, start: number): string {
+  return /* glsl */ `#include <begin_vertex>
+        {
+          vec2 basePos = vec2(0.0);
+          #ifdef USE_INSTANCING
+            basePos = vec2(instanceMatrix[3][0], instanceMatrix[3][2]);
+          #endif
+          float h = max(position.y - ${start.toFixed(2)}, 0.0);
+          float t = uTime + basePos.x * 0.21 + basePos.y * 0.17;
+          float gust = 0.6 + 0.4 * sin(uTime * 0.37 + basePos.x * 0.05);
+          float sway = (sin(t * 1.4) + 0.45 * sin(t * 2.9 + 1.3)) * gust;
+          transformed.x += sway * ${strength.toFixed(4)} * h * h;
+          transformed.z += cos(t * 1.1 + 0.7) * 0.6 * ${strength.toFixed(4)} * h * h;
+        }`;
+}
 
 /** Wind sway injected into a standard material; displacement grows with height above `start`. */
 function windMaterial(
@@ -59,25 +80,44 @@ function windMaterial(
     }
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nuniform float uTime;')
-      .replace(
-        '#include <begin_vertex>',
-        /* glsl */ `#include <begin_vertex>
-        {
-          vec2 basePos = vec2(0.0);
-          #ifdef USE_INSTANCING
-            basePos = vec2(instanceMatrix[3][0], instanceMatrix[3][2]);
-          #endif
-          float h = max(position.y - ${start.toFixed(2)}, 0.0);
-          float t = uTime + basePos.x * 0.21 + basePos.y * 0.17;
-          float gust = 0.6 + 0.4 * sin(uTime * 0.37 + basePos.x * 0.05);
-          float sway = (sin(t * 1.4) + 0.45 * sin(t * 2.9 + 1.3)) * gust;
-          transformed.x += sway * ${strength.toFixed(4)} * h * h;
-          transformed.z += cos(t * 1.1 + 0.7) * 0.6 * ${strength.toFixed(4)} * h * h;
-        }`,
-      );
+      .replace('#include <begin_vertex>', windChunk(strength, start));
   };
   mat.customProgramCacheKey = () => `wind-${strength}-${start}-${mat.side}`;
   return mat;
+}
+
+/**
+ * Camera-facing leaf cards (geometry from `fluffCards`): each card's centre goes through the
+ * normal transform, then its `corner` offset is added in view space, scaled with the instance.
+ * The same trick in the shadow pass turns cards toward the light, so shadows stay leafy and full.
+ */
+function billboard(shader: { vertexShader: string; uniforms: Record<string, THREE.IUniform> }, time: { value: number }, strength: number, start: number): void {
+  shader.uniforms.uTime = time;
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\nuniform float uTime;\nattribute vec2 corner;')
+    .replace('#include <begin_vertex>', windChunk(strength, start))
+    .replace(
+      '#include <project_vertex>',
+      /* glsl */ `vec4 mvPosition = vec4( transformed, 1.0 );
+      float cardScale = 1.0;
+      #ifdef USE_INSTANCING
+        mvPosition = instanceMatrix * mvPosition;
+        cardScale = length( instanceMatrix[0].xyz );
+      #endif
+      mvPosition = modelViewMatrix * mvPosition;
+      mvPosition.xy += corner * cardScale;
+      gl_Position = projectionMatrix * mvPosition;`,
+    );
+}
+
+function fluffMaterials(map: THREE.Texture, time: { value: number }, strength: number, start: number) {
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, map, alphaTest: 0.5, alphaToCoverage: true });
+  material.onBeforeCompile = (shader) => billboard(shader, time, strength, start);
+  material.customProgramCacheKey = () => `fluff-${strength}-${start}`;
+  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.5 });
+  depth.onBeforeCompile = (shader) => billboard(shader, time, strength, start);
+  depth.customProgramCacheKey = () => `fluff-depth-${strength}-${start}`;
+  return { material, depth };
 }
 
 /**
@@ -111,7 +151,13 @@ export class Environment {
     const fernMat = this.track(windMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }, 0.08, 0.05, this.time));
     const trees = [11, 23, 37, 51, 67].map(broadleafTree);
     const bushProps = [8, 19, 33].map(bush);
-    const broadleaf: PropKind = { geometries: trees, material: foliage, castShadow: true, placements: [] };
+    const broadleaf: PropKind = { geometries: trees.map((t) => t.core), material: foliage, castShadow: true, placements: [] };
+    const fluff = fluffMaterials(this.track(leafClusterTexture()), this.time, 0.006, 2.2);
+    this.track(fluff.material);
+    this.track(fluff.depth);
+    // Leaf cards share the trees' placements (aliased below). They don't receive shadow maps:
+    // across hundreds of small cards that reads as speckle; the gradient is baked in instead.
+    const broadleafLeaves: PropKind = { geometries: trees.map((t) => t.cards), material: fluff.material, depthMaterial: fluff.depth, castShadow: true, receiveShadow: false, placements: [] };
     const pineProps = [5, 17, 29].map(pineTree);
     const pines: PropKind = { geometries: pineProps, material: foliage, castShadow: true, placements: [] };
     const palms: PropKind = { geometries: [3, 41, 77].map(palmTree), material: palmMat, castShadow: true, placements: [] };
@@ -129,11 +175,12 @@ export class Environment {
       castShadow: false,
       placements: [],
     };
-    const kinds = [broadleaf, pines, palms, bushes, rocks, seaRocks, flowers, ferns, fungi, beachwood, stars];
+    const kinds = [broadleaf, broadleafLeaves, pines, palms, bushes, rocks, seaRocks, flowers, ferns, fungi, beachwood, stars];
     for (const k of [...kinds, grass]) {
       for (const g of k.geometries) this.track(g);
       k.placements = k.geometries.map(() => []);
     }
+    broadleafLeaves.placements = broadleaf.placements;
 
     // Reserve the lighthouse pad and the spawn area.
     this.occupied.push({ x: LIGHTHOUSE.x, z: LIGHTHOUSE.z, r: LIGHTHOUSE.padRadius + 3.5 });
@@ -477,7 +524,8 @@ export class Environment {
       list.forEach((p, j) => mesh.setMatrixAt(j, this.matrixFor(p)));
       mesh.instanceMatrix.needsUpdate = true;
       mesh.castShadow = kind.castShadow;
-      mesh.receiveShadow = kind.castShadow;
+      mesh.receiveShadow = kind.receiveShadow ?? kind.castShadow;
+      if (kind.depthMaterial) mesh.customDepthMaterial = kind.depthMaterial;
       mesh.computeBoundingSphere();
       this.group.add(mesh);
       this.disposables.push({ dispose: () => mesh.dispose() });
