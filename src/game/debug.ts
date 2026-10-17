@@ -75,6 +75,11 @@ export function createDebugHandle(game: Game, mode: string) {
           ? { position: new THREE.Vector3(...position), target: new THREE.Vector3(...target) }
           : null;
     },
+    /** Where the ambient wildlife is right now (screenshots, checks). */
+    wildlife() {
+      const w = game.wildlife.snapshot();
+      return { butterflies: w.butterflies.map(v), gulls: w.gulls.map(v), fireflies: w.fireflies };
+    },
     /** Triangle budget per mesh (instanced meshes multiplied out), largest first. */
     sceneStats() {
       const rows: Array<{ name: string; triangles: number; instances: number }> = [];

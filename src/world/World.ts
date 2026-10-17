@@ -34,6 +34,13 @@ export interface GameWorld {
   isSafeSpot(x: number, feetY: number, z: number): boolean;
   /** Where a point sits on the ground, for footstep effects. */
   surfaceAt?(x: number, z: number): 'grass' | 'sand' | 'path' | 'rock';
+  /** Where wildlife gathers: flower meadows (butterflies), woods (fireflies), coast (gulls). */
+  readonly habitats?: {
+    meadows: ReadonlyArray<{ x: number; y: number; z: number }>;
+    woods: ReadonlyArray<{ x: number; y: number; z: number }>;
+    /** Points out over the sea near the shore. */
+    coast: ReadonlyArray<{ x: number; y: number; z: number }>;
+  };
   /** Where the lighthouse lamp is, for finale effects. */
   lampPosition?(): THREE.Vector3;
   /** 1 on the shore (or in the sea), falling to 0 well inland; drives the surf sound. */

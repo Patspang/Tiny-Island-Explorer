@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { AudioEngine } from '../audio/AudioEngine';
 import { Sparkles } from '../fx/Sparkles';
+import { Wildlife } from '../fx/Wildlife';
 import { CAMERA, PHYSICS, PLAYER, RENDER } from '../config';
 import { FollowCamera } from '../camera/FollowCamera';
 import { GROUP, groups, PhysicsWorld } from '../physics/PhysicsWorld';
@@ -39,6 +40,7 @@ export class Game {
   readonly visual: PlayerVisual;
   readonly audio = new AudioEngine();
   private readonly sparkles = new Sparkles();
+  readonly wildlife: Wildlife;
   private readonly effects = new GroundEffects({
     footstep: (surface, strength) => this.audio.footstep(surface, strength),
     jump: () => this.audio.jump(),
@@ -93,6 +95,8 @@ export class Game {
     this.followCamera = new FollowCamera(this.renderer.domElement, physics, (x, z) => this.world.groundHeight(x, z));
     this.player = new PlayerController(physics, this.world.spawn, (x, y, z) => this.world.isSafeSpot(x, y, z));
     this.visual = new PlayerVisual();
+    this.wildlife = new Wildlife(this.world.habitats ?? { meadows: [], woods: [], coast: [] }, (x, z) => this.world.groundHeight(x, z));
+    this.scene.add(this.wildlife.group);
     this.scene.add(this.visual.root, this.visual.shadowMesh, this.effects.group, this.sparkles.points);
 
     const layout = this.world.quest;
@@ -267,6 +271,7 @@ export class Game {
     this.visual.update(frameDt, visualState, groundY);
     this.renderer.getDrawingBufferSize(this.drawingSize);
     this.effects.update(frameDt, visualState, this.world, this.followCamera.camera, this.drawingSize.y);
+    this.wildlife.update(frameDt, this.renderTime, this.quest?.duskLevel ?? 0, this.renderFeet, this.followCamera.camera, this.drawingSize.y);
     this.audio.update(frameDt, {
       coast: this.world.coastProximity?.(this.renderFeet.x, this.renderFeet.z) ?? 0.5,
       height: THREE.MathUtils.clamp(this.renderFeet.y / 15, 0, 1),
@@ -389,6 +394,7 @@ export class Game {
     this.effects.dispose();
     this.audio.dispose();
     this.sparkles.dispose();
+    this.wildlife.dispose();
     this.world.dispose();
     this.quest?.dispose();
     this.atmosphere.dispose();
