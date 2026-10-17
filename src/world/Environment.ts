@@ -125,13 +125,8 @@ export class Environment {
       companion: { geometries: trees.map((t) => t.cards), material: leafMat, castShadow: true },
     };
     const pineProps = [5, 17, 29].map(pineTree);
-    const pines: PropKind = {
-      geometries: pineProps.map((p) => p.core),
-      material: foliage,
-      castShadow: true,
-      placements: [],
-      companion: { geometries: pineProps.map((p) => p.cards), material: leafMat, castShadow: true },
-    };
+    // Pines are solid tiers, so they also receive shadows: upper tiers shade the ones below.
+    const pines: PropKind = { geometries: pineProps, material: foliage, castShadow: true, placements: [] };
     const palms: PropKind = { geometries: [3, 41, 77].map(palmTree), material: palmMat, castShadow: true, placements: [] };
     const bushes: PropKind = {
       geometries: bushProps.map((b) => b.core),

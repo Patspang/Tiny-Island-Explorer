@@ -124,6 +124,7 @@ function leafCards(rng: Rng, blobs: CanopyBlob[], perBlob: number, size: [number
   const idx: number[] = [];
   const dir = new THREE.Vector3();
   const n = new THREE.Vector3();
+  const sn = new THREE.Vector3();
   const u = new THREE.Vector3();
   const v = new THREE.Vector3();
   const c = new THREE.Color();
@@ -133,6 +134,8 @@ function leafCards(rng: Rng, blobs: CanopyBlob[], perBlob: number, size: [number
       dir.set(rng() * 2 - 1, rng() * 1.6 - 0.5, rng() * 2 - 1).normalize();
       const p = b.c.clone().addScaledVector(dir, b.r * (0.72 + rng() * 0.3));
       n.copy(p).sub(centroid).normalize();
+      // Shading normal is biased up so underside cards don't face away from all light and go black.
+      sn.copy(n).setY(n.y + 0.8).normalize();
       // Card plane: roughly facing outward, randomly twisted.
       const tilt = new THREE.Vector3(rng() - 0.5, rng() - 0.5, rng() - 0.5).multiplyScalar(1.2);
       const face = n.clone().add(tilt).normalize();
@@ -157,7 +160,7 @@ function leafCards(rng: Rng, blobs: CanopyBlob[], perBlob: number, size: [number
       c.copy(b.color).offsetHSL((rng() - 0.5) * 0.05, (rng() - 0.5) * 0.08, (rng() - 0.5) * 0.1).multiplyScalar(ao);
       for (const [a, bb] of corners) {
         pos.push(p.x + cu.x * a * sz * 0.5 + cv.x * bb * sz * 0.5, p.y + cu.y * a * sz * 0.5 + cv.y * bb * sz * 0.5, p.z + cu.z * a * sz * 0.5 + cv.z * bb * sz * 0.5);
-        nor.push(n.x, n.y, n.z);
+        nor.push(sn.x, sn.y, sn.z);
         uv.push((a + 1) / 2, (bb + 1) / 2);
         col.push(c.r, c.g, c.b);
       }
@@ -235,57 +238,117 @@ export function bush(seed: number): FoliageProp {
   return { core: merge(canopyCore(blobs, seed * 7)), cards: leafCards(rng, blobs, 28, [0.45, 0.7]) };
 }
 
-/** Conifer: stacked, drooping tiers with a feathery shell of needle-clump cards. */
-export function pineTree(seed: number): FoliageProp {
+/**
+ * Conifer: a stack of solid, scalloped skirts. No leaf cards: at this scale a fir reads by its
+ * silhouette and the light/shadow banding between tiers, and cards only add noise.
+ */
+export function pineTree(seed: number): THREE.BufferGeometry {
   const rng = createRng(seed);
-  const tiers = 6 + Math.floor(rng() * 2);
-  const h = 1.1 + rng() * 0.4;
-  const parts = [trunk(rng, h + 1.5, 0.2, 0.1, 0.08, '#6b4630')];
-  const greenColor = new THREE.Color('#3f7d44').offsetHSL((rng() - 0.5) * 0.04, 0, (rng() - 0.5) * 0.05);
-  const blobs: CanopyBlob[] = [];
-  let y = h;
+  const tiers = 5 + Math.floor(rng() * 2);
+  const trunkH = 1.0 + rng() * 0.3;
+  const parts = [trunk(rng, trunkH + 2.6, 0.2, 0.08, 0.06, '#6b4630')];
+  const green = new THREE.Color('#4a9850').offsetHSL((rng() - 0.5) * 0.03, (rng() - 0.5) * 0.06, (rng() - 0.5) * 0.04);
+  let y = trunkH;
   for (let i = 0; i < tiers; i++) {
     const t = i / (tiers - 1);
-    const r = 1.55 - t * 1.2 + rng() * 0.15;
-    const ch = 1.15 - t * 0.4;
-    const g = new THREE.ConeGeometry(r * 0.85, ch, 20, 3);
-    droopTier(g, ch, rng);
-    lumpy(g, 0.1, seed + i);
-    g.rotateY(rng() * Math.PI);
-    g.translate(0, y + ch / 2, 0);
-    // Dark inner volume; the needle cards on top carry the lit surface.
-    const p = prep(g, greenColor.clone().multiplyScalar(0.62));
-    shadeBlob(p, y + ch / 2, ch / 2, 0.55);
-    parts.push(p);
-    // Card clusters ring the lower edge of each tier, where a real fir is fullest.
-    for (let k = 0; k < 3; k++) {
-      const a = (k / 3) * Math.PI * 2 + rng();
-      blobs.push({
-        c: new THREE.Vector3(Math.cos(a) * r * 0.45, y + ch * 0.35, Math.sin(a) * r * 0.45),
-        r: r * 0.55,
-        color: greenColor.clone().offsetHSL(0, 0, 0.08 - t * 0.03).multiplyScalar(1.15),
-      });
-    }
-    y += ch * 0.48;
+    const r = 1.6 - t * 1.15 + (rng() - 0.5) * 0.12;
+    const h = (i === tiers - 1 ? 1.25 : 1.05) - t * 0.25;
+    const tierColor = green.clone().offsetHSL((rng() - 0.5) * 0.015, 0, t * 0.05);
+    parts.push(pineTier(rng, r, h, y, tierColor, i === tiers - 1));
+    y += h * (0.5 - t * 0.06);
   }
-  return { core: merge(parts), cards: leafCards(rng, blobs, 16, [0.5, 0.8]) };
+  return merge(parts);
 }
 
-/** Soften a cone tier: a scalloped, drooping hem and a slightly rounded flank. */
-function droopTier(g: THREE.BufferGeometry, height: number, rng: Rng): void {
-  const pos = g.getAttribute('position');
+/**
+ * One fir tier: a skirt whose hem is a ring of rounded, drooping lobes, plus a shallow underside.
+ * Vertex colours carry the stylised lighting: lit, slightly warm lobe tips, darker toward the
+ * trunk and underneath, so tiers separate cleanly from each other.
+ */
+function pineTier(rng: Rng, radius: number, height: number, base: number, color: THREE.Color, isTop: boolean): THREE.BufferGeometry {
+  const lobes = 7 + Math.floor(rng() * 3);
+  const radial = lobes * 4;
+  const rows = 4;
   const phase = rng() * Math.PI * 2;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    const z = pos.getZ(i);
-    const t = (y + height / 2) / height; // 0 at the hem, 1 at the tip
-    const a = Math.atan2(z, x);
-    const scallop = 1 + 0.12 * Math.sin(a * 7 + phase) * (1 - t);
-    const bulge = 1 + 0.18 * Math.sin(Math.PI * t);
-    pos.setXYZ(i, x * scallop * bulge, y - (1 - t) * (1 - t) * 0.28, z * scallop * bulge);
+  const jitter = Array.from({ length: lobes }, () => 0.85 + rng() * 0.3);
+  // Lobe shape around the hem: 1 at a lobe's tip, 0 in the notch between lobes.
+  const lobeAt = (a: number) => {
+    const u = ((a + phase) / (Math.PI * 2)) * lobes;
+    const k = Math.floor(u);
+    const f = u - k;
+    const peak = Math.pow(Math.sin(Math.PI * f), 0.7);
+    return { peak, size: jitter[((k % lobes) + lobes) % lobes] };
+  };
+  const pos: number[] = [];
+  const shade: number[] = [];
+  const idx: number[] = [];
+  const tipY = base + height;
+  const hemY = base;
+  // Upper surface: rows from tip (0) to hem (rows); underside: hem back in toward the trunk.
+  const ringCount = rows + 2;
+  for (let ring = 0; ring <= ringCount; ring++) {
+    for (let j = 0; j <= radial; j++) {
+      const a = (j / radial) * Math.PI * 2;
+      const { peak, size } = lobeAt(a);
+      const out = 0.72 + 0.28 * peak * size;
+      let r: number;
+      let yy: number;
+      let s: number;
+      if (ring <= rows) {
+        const t = ring / rows;
+        // Convex flank that flares near the hem; lobes only shape the outer half.
+        const lobeMix = THREE.MathUtils.smoothstep(t, 0.35, 1);
+        r = radius * Math.pow(t, 0.85) * THREE.MathUtils.lerp(0.86, out, lobeMix);
+        yy = THREE.MathUtils.lerp(tipY, hemY, Math.pow(t, 1.15)) - lobeMix * peak * size * height * 0.16;
+        // Lit lobe tips and crown, darker in the notches between lobes.
+        s = 0.8 + 0.12 * (1 - t) + lobeMix * (0.22 * peak - 0.08);
+        if (isTop && ring === 0) s = 0.98;
+      } else {
+        const u = (ring - rows) / 2;
+        r = radius * out * THREE.MathUtils.lerp(1, 0.2, u);
+        yy = hemY - peak * size * height * 0.16 * (1 - u) + height * 0.22 * u;
+        s = 0.42;
+      }
+      pos.push(Math.cos(a) * r, yy, Math.sin(a) * r);
+      shade.push(s);
+    }
   }
-  g.computeVertexNormals();
+  const w = radial + 1;
+  for (let ring = 0; ring < ringCount; ring++) {
+    for (let j = 0; j < radial; j++) {
+      const a = ring * w + j;
+      const b = a + w;
+      idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('shade', new THREE.Float32BufferAttribute(shade, 1));
+  g.setIndex(idx);
+  // Weld the seam and the tip so normals are smooth all the way round.
+  const welded = mergeVertices(g, 1e-4);
+  g.dispose();
+  welded.computeVertexNormals();
+  const out = welded.toNonIndexed();
+  welded.dispose();
+  const sh = out.getAttribute('shade');
+  const nor = out.getAttribute('normal');
+  const n = sh.count;
+  const colors = new Float32Array(n * 3);
+  const c = new THREE.Color();
+  const warm = new THREE.Color('#9fc95a');
+  for (let i = 0; i < n; i++) {
+    const s = sh.getX(i);
+    // Upward-facing tips pick up a warm yellow-green highlight, like sunlit needles.
+    const up = THREE.MathUtils.clamp(nor.getY(i), 0, 1);
+    c.copy(color).multiplyScalar(s).lerp(warm, THREE.MathUtils.clamp((s - 0.84) * 1.6, 0, 0.3) * up);
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+  }
+  out.deleteAttribute('shade');
+  out.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return out;
 }
 
 /** Leaning palm with drooping fronds and coconuts. */
@@ -444,18 +507,62 @@ export function grassTuft(seed: number): THREE.BufferGeometry {
   return g;
 }
 
-/** Small flower: stem, petals and a yellow centre. */
+/**
+ * Wildflower clump: two or three small blossoms on slender, leaning stems over a few basal
+ * leaves. Each blossom is a ring of separate, upturned petals around a domed centre, with petals
+ * deepening in colour toward the middle so the head reads as a flower, not a disc.
+ */
 export function flower(seed: number, petals: THREE.ColorRepresentation): THREE.BufferGeometry {
   const rng = createRng(seed);
-  const stemH = 0.28 + rng() * 0.12;
-  const stem = new THREE.CylinderGeometry(0.012, 0.015, stemH, 4);
-  stem.translate(0, stemH / 2, 0);
-  const head = new THREE.IcosahedronGeometry(0.1, 1);
-  head.scale(1.25, 0.55, 1.25);
-  head.translate(0, stemH + 0.02, 0);
-  const centre = new THREE.SphereGeometry(0.03, 5, 4);
-  centre.translate(0, stemH + 0.06, 0);
-  return merge([prep(stem, '#4f8a3a'), prep(head, petals), prep(centre, '#ffd34d')]);
+  const parts: THREE.BufferGeometry[] = [];
+  const petalColor = new THREE.Color(petals);
+  const deep = petalColor.clone().offsetHSL(0, 0.1, -0.18);
+  const hsl = petalColor.getHSL({ h: 0, s: 0, l: 0 });
+  // Yellow petals get an orange eye; everything else a yellow one.
+  const centreColor = hsl.h > 0.1 && hsl.h < 0.2 && hsl.s > 0.5 ? '#d9792a' : '#ffd34d';
+  for (let i = 0; i < 3; i++) {
+    const leaf = new THREE.SphereGeometry(1, 5, 2);
+    leaf.scale(0.025, 0.008, 0.11);
+    leaf.translate(0, 0, 0.1);
+    leaf.rotateX(-0.5 - rng() * 0.3);
+    leaf.rotateY((i / 3) * Math.PI * 2 + rng());
+    parts.push(prep(leaf, '#4f8f3a'));
+  }
+  const heads = 2 + Math.floor(rng() * 2);
+  for (let k = 0; k < heads; k++) {
+    const h = 0.17 + rng() * 0.15;
+    const a = (k / heads) * Math.PI * 2 + rng() * 0.6;
+    const lean = 0.03 + rng() * 0.05;
+    const top = new THREE.Vector3(Math.cos(a) * lean, h, Math.sin(a) * lean);
+    const stem = taperTube([new THREE.Vector3(0, 0, 0), new THREE.Vector3(top.x * 0.3, h * 0.5, top.z * 0.3), top], 0.008, 0.006, 4, 4);
+    parts.push(prep(stem, '#4f8a3a'));
+    const size = 1.15 + rng() * 0.35;
+    const count = 5 + (rng() < 0.3 ? 1 : 0);
+    const spin = rng() * Math.PI * 2;
+    for (let p = 0; p < count; p++) {
+      const g = new THREE.SphereGeometry(1, 5, 2);
+      g.scale(0.034 * size, 0.008 * size, 0.019 * size);
+      g.translate(0.032 * size, 0, 0);
+      g.rotateZ(0.32); // cup the petals upward
+      g.rotateY(spin + (p / count) * Math.PI * 2);
+      const out = prep(g, petalColor);
+      // Gradient: deeper colour at the petal base, full colour at the tip.
+      const pos = out.getAttribute('position');
+      const col = out.getAttribute('color');
+      for (let v = 0; v < pos.count; v++) {
+        const d = THREE.MathUtils.clamp(Math.hypot(pos.getX(v), pos.getZ(v)) / (0.06 * size), 0, 1);
+        tmpColor.copy(deep).lerp(petalColor, THREE.MathUtils.smoothstep(d, 0.15, 0.7));
+        col.setXYZ(v, tmpColor.r, tmpColor.g, tmpColor.b);
+      }
+      out.translate(top.x, top.y, top.z);
+      parts.push(out);
+    }
+    const centre = new THREE.SphereGeometry(0.016 * size, 5, 3);
+    centre.scale(1, 0.7, 1);
+    centre.translate(top.x, top.y + 0.008, top.z);
+    parts.push(prep(centre, centreColor));
+  }
+  return merge(parts);
 }
 
 /** Tube along points with a radius that tapers r0 -> r1 (optionally shaped by `profile`). */
