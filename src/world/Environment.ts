@@ -121,6 +121,47 @@ function fluffMaterials(map: THREE.Texture, time: { value: number }, strength: n
 }
 
 /**
+ * Stone: vertex-coloured, with fine mottling and speckle computed per pixel from the rock's own
+ * (object-space) position, so the pattern sticks to the rock and scales with it.
+ */
+function stoneMaterial(): THREE.MeshStandardMaterial {
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vStonePos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvStonePos = position;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `#include <common>
+        varying vec3 vStonePos;
+        float stoneHash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+        float stoneNoise(vec3 p) {
+          vec3 i = floor(p);
+          vec3 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(
+            mix(mix(stoneHash(i), stoneHash(i + vec3(1, 0, 0)), f.x), mix(stoneHash(i + vec3(0, 1, 0)), stoneHash(i + vec3(1, 1, 0)), f.x), f.y),
+            mix(mix(stoneHash(i + vec3(0, 0, 1)), stoneHash(i + vec3(1, 0, 1)), f.x), mix(stoneHash(i + vec3(0, 1, 1)), stoneHash(i + vec3(1, 1, 1)), f.x), f.y),
+            f.z);
+        }`,
+      )
+      .replace(
+        '#include <color_fragment>',
+        /* glsl */ `#include <color_fragment>
+        {
+          vec3 q = vStonePos * 3.0;
+          float m = stoneNoise(q) * 0.55 + stoneNoise(q * 2.3) * 0.3 + stoneNoise(q * 5.1) * 0.15;
+          float speck = smoothstep(0.8, 0.95, stoneNoise(vStonePos * 31.0));
+          diffuseColor.rgb *= (0.72 + 0.5 * m) * (1.0 - 0.1 * speck);
+        }`,
+      );
+  };
+  mat.customProgramCacheKey = () => 'stone';
+  return mat;
+}
+
+/**
  * Trees, bushes, rocks, grass and flowers. Placement is deterministic and rule-based:
  * clusters with clearings, nothing on the path, a clear view from the beach to the
  * lighthouse, and colliders only on solid things (trunks and big rocks).
@@ -171,8 +212,10 @@ export class Environment {
     const fungi: PropKind = { geometries: [3, 4, 9].map(mushrooms), material: rockMat, castShadow: false, placements: [] };
     const beachwood: PropKind = { geometries: [21, 22].map(driftwood), material: rockMat, castShadow: true, placements: [] };
     const stars: PropKind = { geometries: [1, 2, 3].map(starfish), material: rockMat, castShadow: false, placements: [] };
-    const rocks: PropKind = { geometries: [2, 13, 31, 47].map((s) => rock(s)), material: rockMat, castShadow: true, placements: [] };
-    const seaRocks: PropKind = { geometries: [61, 73].map((s) => rock(s, false)), material: rockMat, castShadow: true, placements: [] };
+    const stoneMat = this.track(stoneMaterial());
+    const rocks: PropKind = { geometries: [2, 13, 31, 47].map((s) => rock(s)), material: stoneMat, castShadow: true, placements: [] };
+    // Sea rocks, outcrops and pebbles are numerous and mostly seen from afar: fewer triangles.
+    const seaRocks: PropKind = { geometries: [61, 73, 89].map((s) => rock(s, false, 2)), material: stoneMat, castShadow: true, placements: [] };
     const grass: PropKind = { geometries: [1, 2, 3].map(grassTuft), material: grassMat, castShadow: false, placements: [] };
     const flowers: PropKind = {
       geometries: ['#ffffff', '#ffd23f', '#f78fb3', '#b8a1ff', '#ff9b54'].map((c, i) => flower(90 + i, c)),

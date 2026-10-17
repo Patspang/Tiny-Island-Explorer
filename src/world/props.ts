@@ -2,7 +2,7 @@
 // vertex colours, ready to be drawn many times through an InstancedMesh.
 
 import * as THREE from 'three';
-import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { createRng, fbm2 } from './noise';
 
 type Rng = () => number;
@@ -483,40 +483,89 @@ function frond(rng: Rng, origin: THREE.Vector3, angle: number, length: number): 
   return prep(g, `#${shade}`);
 }
 
-/** Weathered boulder: displaced, slightly flattened, moss on top. Origin at its base. */
-export function rock(seed: number, mossy = true): THREE.BufferGeometry {
+/**
+ * Chiselled boulder: a lumpy blob cut by a handful of random planes, so it reads as stone with
+ * broad flat faces and softened edges rather than a smooth potato. Side cuts are kept steep
+ * (the character controller must not walk up them); top cuts may be flat. Freshly cut faces are
+ * a little lighter than the weathered rind, crevices and the base darker, moss on top.
+ * Origin at its base. `detail` trades facet crispness for triangles (3 for big boulders).
+ */
+export function rock(seed: number, mossy = true, detail = 3): THREE.BufferGeometry {
   const rng = createRng(seed);
-  const g = smoothIco(1, 2);
+  const g = smoothIco(1, detail);
   const pos = g.getAttribute('position');
   const v = new THREE.Vector3();
   const sx = 1 + rng() * 0.35;
   const sz = 0.8 + rng() * 0.3;
+  let reach = 0;
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i);
-    const n1 = fbm2(v.x * 1.3 + seed, v.z * 1.3 + v.y, 3, seed);
-    // Facets: quantise a little so it reads as stone, not a potato.
-    const k = 1 + 0.28 * n1 + 0.08 * Math.round(n1 * 3) / 3;
-    v.multiplyScalar(k);
+    v.multiplyScalar(1 + 0.16 * fbm2(v.x * 1.3 + seed, v.z * 1.3 + v.y, 3, seed));
     v.x *= sx;
     v.z *= sz;
-    v.y *= 0.72;
-    if (v.y < -0.25) v.y = -0.25 + (v.y + 0.25) * 0.3; // flatter underside
+    v.y *= 0.8;
+    reach = Math.max(reach, Math.hypot(v.x, v.z));
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  const cut = new Float32Array(pos.count);
+  const n = new THREE.Vector3();
+  const cuts = 9 + Math.floor(rng() * 5);
+  for (let c = 0; c < cuts; c++) {
+    const a = rng() * Math.PI * 2;
+    const ny = rng() < 0.3 ? 0.7 + rng() * 0.3 : -0.2 + rng() * 0.65;
+    const h = Math.sqrt(1 - ny * ny);
+    n.set(Math.cos(a) * h, ny, Math.sin(a) * h);
+    let support = -Infinity;
+    for (let i = 0; i < pos.count; i++) support = Math.max(support, v.fromBufferAttribute(pos, i).dot(n));
+    // Varied depths: a few deep cuts make the big faces, shallow ones nick the corners.
+    const d = support * (rng() < 0.4 ? 0.66 + rng() * 0.1 : 0.82 + rng() * 0.12);
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i);
+      const k = v.dot(n) - d;
+      if (k <= 0) continue;
+      v.addScaledVector(n, -k);
+      pos.setXYZ(i, v.x, v.y, v.z);
+      cut[i] = 1;
+    }
+  }
+  // Restore the footprint the cuts shaved off (placement radii and colliders assume it), and
+  // flatten the underside so the boulder sits in the ground.
+  let after = 0;
+  for (let i = 0; i < pos.count; i++) after = Math.max(after, Math.hypot(pos.getX(i), pos.getZ(i)));
+  const grow = reach / Math.max(0.01, after);
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    v.x *= grow;
+    v.z *= grow;
+    if (v.y < -0.25) v.y = -0.25 + (v.y + 0.25) * 0.3;
     pos.setXYZ(i, v.x, v.y + 0.25, v.z);
   }
-  g.computeVertexNormals();
-  const out = prep(g, '#9c9283');
+  g.setAttribute('cut', new THREE.BufferAttribute(cut, 1));
+  // Crisp edges where faces meet at a real angle; smooth shading across the weathered rind.
+  const creased = toCreasedNormals(g, THREE.MathUtils.degToRad(28));
+  g.dispose();
+  const out = prep(creased, '#9a958c');
   const col = out.getAttribute('color');
   const nor = out.getAttribute('normal');
   const p = out.getAttribute('position');
+  const cutA = out.getAttribute('cut');
   const stone = new THREE.Color();
   const moss = new THREE.Color('#6f9a45');
   for (let i = 0; i < col.count; i++) {
-    stone.set('#a1978a').offsetHSL(0, 0, fbm2(p.getX(i) * 3, p.getZ(i) * 3 + p.getY(i) * 2, 2, seed + 5) * 0.08);
+    const x = p.getX(i);
+    const y = p.getY(i);
+    const z = p.getZ(i);
+    stone.set('#a39e94').offsetHSL(0, 0, fbm2(x * 2.2, z * 2.2 + y * 1.7, 3, seed + 5) * 0.1);
+    // Cut faces: fresher, lighter stone. Uncut rind between them: older, darker.
+    stone.multiplyScalar(0.86 + 0.16 * cutA.getX(i));
     const up = nor.getY(i);
-    if (mossy) stone.lerp(moss, THREE.MathUtils.smoothstep(up, 0.55, 0.85) * 0.85);
-    const ao = 0.65 + 0.35 * THREE.MathUtils.clamp(p.getY(i) / 1.2, 0, 1);
+    // Moss only in patches on upward faces, so the stone still reads.
+    const patch = THREE.MathUtils.smoothstep(fbm2(x * 1.6 + 9, z * 1.6 - y, 2, seed + 11), -0.05, 0.25);
+    if (mossy) stone.lerp(moss, THREE.MathUtils.smoothstep(up, 0.75, 0.95) * patch * 0.65);
+    const ao = 0.74 + 0.26 * THREE.MathUtils.clamp(p.getY(i) / 1.1, 0, 1);
     col.setXYZ(i, stone.r * ao, stone.g * ao, stone.b * ao);
   }
+  out.deleteAttribute('cut');
   return out;
 }
 
