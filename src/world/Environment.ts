@@ -43,8 +43,42 @@ const GRASS_DRAW_DISTANCE = 60;
 
 const n = { x: 0, y: 1, z: 0 };
 
+/** How a plant gives way to the player: horizontal radius (m), lean per metre of height, sag. */
+interface Push {
+  radius: number;
+  lean: number;
+  sag: number;
+}
+
+/**
+ * Player position shared by every plant material, so grass, flowers, ferns and bushes part
+ * around the explorer. Purely visual: plants have no colliders.
+ */
+const playerUniform = { value: new THREE.Vector3(0, -1000, 0) };
+
+/**
+ * Vertex shader chunk: bend away from the player within `push.radius`, more toward the top of
+ * the plant and with a little sag, converted into the instance's local frame.
+ */
+function pushChunk(push: Push): string {
+  return /* glsl */ `
+        #ifdef USE_INSTANCING
+        {
+          mat3 im = mat3( instanceMatrix );
+          vec3 wp = ( instanceMatrix * vec4( transformed, 1.0 ) ).xyz;
+          vec2 away = wp.xz - uPlayer.xz;
+          float d = length( away );
+          float f = ( 1.0 - smoothstep( ${(push.radius * 0.3).toFixed(3)}, ${push.radius.toFixed(3)}, d ) ) * step( abs( wp.y - uPlayer.y ), 2.5 );
+          float hh = max( position.y, 0.0 );
+          vec2 dir = away / max( d, 1e-3 );
+          vec3 bend = vec3( dir.x, 0.0, dir.y ) * f * ${push.lean.toFixed(3)} * hh - vec3( 0.0, f * ${push.sag.toFixed(3)} * hh, 0.0 );
+          transformed += ( transpose( im ) * bend ) / dot( im[0], im[0] );
+        }
+        #endif`;
+}
+
 /** Vertex shader chunk: wind sway that grows with height above `start`. */
-function windChunk(strength: number, start: number): string {
+function windChunk(strength: number, start: number, push?: Push): string {
   return /* glsl */ `#include <begin_vertex>
         {
           vec2 basePos = vec2(0.0);
@@ -57,7 +91,7 @@ function windChunk(strength: number, start: number): string {
           float sway = (sin(t * 1.4) + 0.45 * sin(t * 2.9 + 1.3)) * gust;
           transformed.x += sway * ${strength.toFixed(4)} * h * h;
           transformed.z += cos(t * 1.1 + 0.7) * 0.6 * ${strength.toFixed(4)} * h * h;
-        }`;
+        }${push ? pushChunk(push) : ''}`;
 }
 
 /** Wind sway injected into a standard material; displacement grows with height above `start`. */
@@ -66,10 +100,12 @@ function windMaterial(
   strength: number,
   start: number,
   time: { value: number },
+  push?: Push,
 ): THREE.MeshStandardMaterial {
   const mat = new THREE.MeshStandardMaterial(base);
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
+    shader.uniforms.uPlayer = playerUniform;
     // Foliage is two-sided but its normals describe the plant's volume (outward from a canopy,
     // up for grass). Don't flip them on back faces, or every frond or blade seen from behind turns black.
     if (mat.side === THREE.DoubleSide) {
@@ -79,10 +115,10 @@ function windMaterial(
       );
     }
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;')
-      .replace('#include <begin_vertex>', windChunk(strength, start));
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uPlayer;')
+      .replace('#include <begin_vertex>', windChunk(strength, start, push));
   };
-  mat.customProgramCacheKey = () => `wind-${strength}-${start}-${mat.side}`;
+  mat.customProgramCacheKey = () => `wind-${strength}-${start}-${mat.side}-${push ? Object.values(push).join('-') : ''}`;
   return mat;
 }
 
@@ -91,11 +127,18 @@ function windMaterial(
  * normal transform, then its `corner` offset is added in view space, scaled with the instance.
  * The same trick in the shadow pass turns cards toward the light, so shadows stay leafy and full.
  */
-function billboard(shader: { vertexShader: string; uniforms: Record<string, THREE.IUniform> }, time: { value: number }, strength: number, start: number): void {
+function billboard(
+  shader: { vertexShader: string; uniforms: Record<string, THREE.IUniform> },
+  time: { value: number },
+  strength: number,
+  start: number,
+  push?: Push,
+): void {
   shader.uniforms.uTime = time;
+  shader.uniforms.uPlayer = playerUniform;
   shader.vertexShader = shader.vertexShader
-    .replace('#include <common>', '#include <common>\nuniform float uTime;\nattribute vec2 corner;')
-    .replace('#include <begin_vertex>', windChunk(strength, start))
+    .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uPlayer;\nattribute vec2 corner;')
+    .replace('#include <begin_vertex>', windChunk(strength, start, push))
     .replace(
       '#include <project_vertex>',
       /* glsl */ `vec4 mvPosition = vec4( transformed, 1.0 );
@@ -110,13 +153,14 @@ function billboard(shader: { vertexShader: string; uniforms: Record<string, THRE
     );
 }
 
-function fluffMaterials(map: THREE.Texture, time: { value: number }, strength: number, start: number) {
+function fluffMaterials(map: THREE.Texture, time: { value: number }, strength: number, start: number, push?: Push) {
+  const key = `${strength}-${start}-${push ? Object.values(push).join('-') : ''}`;
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, map, alphaTest: 0.5, alphaToCoverage: true });
-  material.onBeforeCompile = (shader) => billboard(shader, time, strength, start);
-  material.customProgramCacheKey = () => `fluff-${strength}-${start}`;
+  material.onBeforeCompile = (shader) => billboard(shader, time, strength, start, push);
+  material.customProgramCacheKey = () => `fluff-${key}`;
   const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.5 });
-  depth.onBeforeCompile = (shader) => billboard(shader, time, strength, start);
-  depth.customProgramCacheKey = () => `fluff-depth-${strength}-${start}`;
+  depth.onBeforeCompile = (shader) => billboard(shader, time, strength, start, push);
+  depth.customProgramCacheKey = () => `fluff-depth-${key}`;
   return { material, depth };
 }
 
@@ -175,6 +219,7 @@ export class Environment {
   private readonly disposables: Array<{ dispose(): void }> = [];
   private readonly occupied: Array<{ x: number; z: number; r: number }> = [];
   private readonly grassChunks: Array<{ mesh: THREE.InstancedMesh; centre: THREE.Vector3 }> = [];
+  private readonly bushSpots: Array<{ x: number; y: number; z: number; r: number }> = [];
 
   constructor(physics: PhysicsWorld) {
     const rng = createRng(4242);
@@ -185,11 +230,17 @@ export class Environment {
     const palmMat = this.track(
       windMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }, 0.004, 3.5, this.time),
     );
-    const bushMat = this.track(windMaterial({ vertexColors: true, roughness: 0.9 }, 0.03, 0.3, this.time));
-    const grassMat = this.track(windMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide }, 0.35, 0, this.time));
+    const bushPush: Push = { radius: 1.3, lean: 0.35, sag: 0.12 };
+    const bushMat = this.track(windMaterial({ vertexColors: true, roughness: 0.9 }, 0.03, 0.3, this.time, bushPush));
+    const flowerMat = this.track(windMaterial({ vertexColors: true, roughness: 0.9 }, 0.03, 0.3, this.time, { radius: 0.6, lean: 1.4, sag: 0.4 }));
+    const grassMat = this.track(
+      windMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide }, 0.35, 0, this.time, { radius: 0.65, lean: 1.6, sag: 0.6 }),
+    );
     const rockMat = this.track(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 }));
 
-    const fernMat = this.track(windMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }, 0.08, 0.05, this.time));
+    const fernMat = this.track(
+      windMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }, 0.08, 0.05, this.time, { radius: 0.9, lean: 0.9, sag: 0.4 }),
+    );
     const trees = [11, 23, 37, 51, 67].map(broadleafTree);
     const bushProps = [8, 19, 33].map(bush);
     const broadleaf: PropKind = { geometries: trees.map((t) => t.core), material: foliage, castShadow: true, placements: [] };
@@ -204,7 +255,7 @@ export class Environment {
     const pines: PropKind = { geometries: pineProps, material: foliage, castShadow: true, placements: [] };
     const palms: PropKind = { geometries: [3, 41, 77].map(palmTree), material: palmMat, castShadow: true, placements: [] };
     const bushes: PropKind = { geometries: bushProps.map((b) => b.core), material: bushMat, castShadow: true, placements: [] };
-    const bushFluff = fluffMaterials(leafTex, this.time, 0.03, 0.3);
+    const bushFluff = fluffMaterials(leafTex, this.time, 0.03, 0.3, bushPush);
     this.track(bushFluff.material);
     this.track(bushFluff.depth);
     const bushLeaves: PropKind = { geometries: bushProps.map((b) => b.cards), material: bushFluff.material, depthMaterial: bushFluff.depth, castShadow: true, receiveShadow: false, placements: [] };
@@ -219,7 +270,7 @@ export class Environment {
     const grass: PropKind = { geometries: [1, 2, 3].map(grassTuft), material: grassMat, castShadow: false, placements: [] };
     const flowers: PropKind = {
       geometries: ['#ffffff', '#ffd23f', '#f78fb3', '#b8a1ff', '#ff9b54'].map((c, i) => flower(90 + i, c)),
-      material: bushMat,
+      material: flowerMat,
       castShadow: false,
       placements: [],
     };
@@ -368,6 +419,7 @@ export class Environment {
       if (!this.reserve(x, z, 0.9 * scale)) continue;
       const variant = Math.floor(rng() * bushes.geometries.length);
       bushes.placements[variant].push({ x, y: y - 0.1, z, rotY: rng() * Math.PI * 2, scale });
+      this.bushSpots.push({ x, y, z, r: 0.95 * scale });
       this.occluders.push({ x, z, radius: 0.8 * scale, strength: 0.32 });
       count++;
     }
@@ -590,8 +642,20 @@ export class Environment {
     return total;
   }
 
-  update(time: number, camera?: THREE.Camera): void {
+  /** How deep a point is inside a bush: 0 outside, 1 at a bush's centre (for leaf effects). */
+  foliageAt(x: number, y: number, z: number): number {
+    let best = 0;
+    for (const b of this.bushSpots) {
+      if (Math.abs(b.y - y) > 1.5) continue;
+      const d = Math.hypot(b.x - x, b.z - z);
+      if (d < b.r) best = Math.max(best, 1 - d / b.r);
+    }
+    return best;
+  }
+
+  update(time: number, camera?: THREE.Camera, player?: THREE.Vector3): void {
     this.time.value = time;
+    if (player) playerUniform.value.copy(player);
     if (camera) {
       const cx = camera.position.x;
       const cz = camera.position.z;
