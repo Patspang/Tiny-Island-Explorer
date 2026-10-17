@@ -273,8 +273,8 @@ export function broadleafTree(seed: number): FoliageProp {
   return { core: merge(parts), cards: fluffCards(rng, blobs, 150, [0.75, 1.15]) };
 }
 
-/** Low bush: a few puffy clumps hugging the ground. */
-export function bush(seed: number): THREE.BufferGeometry {
+/** Low bush: a few fluffy clumps hugging the ground, built like the broadleaf canopy. */
+export function bush(seed: number): FoliageProp {
   const rng = createRng(seed);
   const base = new THREE.Color(LEAF_GREENS[Math.floor(rng() * LEAF_GREENS.length)]);
   const blobs: CanopyBlob[] = [];
@@ -284,7 +284,8 @@ export function bush(seed: number): THREE.BufferGeometry {
     const a = (i / n) * Math.PI * 2 + rng() * 0.5;
     blobs.push({ c: new THREE.Vector3(Math.cos(a) * 0.4, r * 0.75, Math.sin(a) * 0.4), r, color: base.clone().offsetHSL(0, 0, (rng() - 0.5) * 0.08) });
   }
-  return merge(canopy(rng, blobs, 2, seed * 7, 2));
+  const inner = blobs.map((b) => ({ ...b, r: b.r * 0.72 }));
+  return { core: merge(canopy(rng, inner, 2, seed * 7, 1, 0.45)), cards: fluffCards(rng, blobs, 180, [0.4, 0.62]) };
 }
 
 /**

@@ -152,7 +152,8 @@ export class Environment {
     const trees = [11, 23, 37, 51, 67].map(broadleafTree);
     const bushProps = [8, 19, 33].map(bush);
     const broadleaf: PropKind = { geometries: trees.map((t) => t.core), material: foliage, castShadow: true, placements: [] };
-    const fluff = fluffMaterials(this.track(leafClusterTexture()), this.time, 0.006, 2.2);
+    const leafTex = this.track(leafClusterTexture());
+    const fluff = fluffMaterials(leafTex, this.time, 0.006, 2.2);
     this.track(fluff.material);
     this.track(fluff.depth);
     // Leaf cards share the trees' placements (aliased below). They don't receive shadow maps:
@@ -161,7 +162,11 @@ export class Environment {
     const pineProps = [5, 17, 29].map(pineTree);
     const pines: PropKind = { geometries: pineProps, material: foliage, castShadow: true, placements: [] };
     const palms: PropKind = { geometries: [3, 41, 77].map(palmTree), material: palmMat, castShadow: true, placements: [] };
-    const bushes: PropKind = { geometries: bushProps, material: bushMat, castShadow: true, placements: [] };
+    const bushes: PropKind = { geometries: bushProps.map((b) => b.core), material: bushMat, castShadow: true, placements: [] };
+    const bushFluff = fluffMaterials(leafTex, this.time, 0.03, 0.3);
+    this.track(bushFluff.material);
+    this.track(bushFluff.depth);
+    const bushLeaves: PropKind = { geometries: bushProps.map((b) => b.cards), material: bushFluff.material, depthMaterial: bushFluff.depth, castShadow: true, receiveShadow: false, placements: [] };
     const ferns: PropKind = { geometries: [5, 6, 7].map(fern), material: fernMat, castShadow: false, placements: [] };
     const fungi: PropKind = { geometries: [3, 4, 9].map(mushrooms), material: rockMat, castShadow: false, placements: [] };
     const beachwood: PropKind = { geometries: [21, 22].map(driftwood), material: rockMat, castShadow: true, placements: [] };
@@ -175,12 +180,13 @@ export class Environment {
       castShadow: false,
       placements: [],
     };
-    const kinds = [broadleaf, broadleafLeaves, pines, palms, bushes, rocks, seaRocks, flowers, ferns, fungi, beachwood, stars];
+    const kinds = [broadleaf, broadleafLeaves, pines, palms, bushes, bushLeaves, rocks, seaRocks, flowers, ferns, fungi, beachwood, stars];
     for (const k of [...kinds, grass]) {
       for (const g of k.geometries) this.track(g);
       k.placements = k.geometries.map(() => []);
     }
     broadleafLeaves.placements = broadleaf.placements;
+    bushLeaves.placements = bushes.placements;
 
     // Reserve the lighthouse pad and the spawn area.
     this.occupied.push({ x: LIGHTHOUSE.x, z: LIGHTHOUSE.z, r: LIGHTHOUSE.padRadius + 3.5 });
