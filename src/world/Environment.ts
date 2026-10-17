@@ -13,7 +13,7 @@ import {
   SPAWN,
 } from './IslandShape';
 import { createRng, fbm2, smoothstep } from './noise';
-import { broadleafTree, bush, driftwood, fern, flower, grassTuft, leafTexture, mushrooms, palmTree, pineTree, rock, starfish } from './props';
+import { broadleafTree, bush, driftwood, fern, flower, grassTuft, leafClusterTexture, mushrooms, palmTree, pineTree, rock, starfish } from './props';
 import type { ObstacleInfo } from './World';
 
 interface Placement {
@@ -31,8 +31,10 @@ interface PropKind {
   material: THREE.Material;
   castShadow: boolean;
   placements: Placement[][];
-  /** Second mesh per variant drawn with the same placements (e.g. leaf cards). */
-  companion?: { geometries: THREE.BufferGeometry[]; material: THREE.Material; castShadow: boolean };
+  /** Defaults to `castShadow`. */
+  receiveShadow?: boolean;
+  /** Shadow-pass material for geometry the vertex shader reshapes (billboards). */
+  depthMaterial?: THREE.Material;
 }
 
 /** Grass is split into chunks so off-screen and distant patches can be skipped. */
@@ -40,6 +42,23 @@ const GRASS_CHUNK = 24;
 const GRASS_DRAW_DISTANCE = 60;
 
 const n = { x: 0, y: 1, z: 0 };
+
+/** Vertex shader chunk: wind sway that grows with height above `start`. */
+function windChunk(strength: number, start: number): string {
+  return /* glsl */ `#include <begin_vertex>
+        {
+          vec2 basePos = vec2(0.0);
+          #ifdef USE_INSTANCING
+            basePos = vec2(instanceMatrix[3][0], instanceMatrix[3][2]);
+          #endif
+          float h = max(position.y - ${start.toFixed(2)}, 0.0);
+          float t = uTime + basePos.x * 0.21 + basePos.y * 0.17;
+          float gust = 0.6 + 0.4 * sin(uTime * 0.37 + basePos.x * 0.05);
+          float sway = (sin(t * 1.4) + 0.45 * sin(t * 2.9 + 1.3)) * gust;
+          transformed.x += sway * ${strength.toFixed(4)} * h * h;
+          transformed.z += cos(t * 1.1 + 0.7) * 0.6 * ${strength.toFixed(4)} * h * h;
+        }`;
+}
 
 /** Wind sway injected into a standard material; displacement grows with height above `start`. */
 function windMaterial(
@@ -52,7 +71,7 @@ function windMaterial(
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
     // Foliage is two-sided but its normals describe the plant's volume (outward from a canopy,
-    // up for grass). Don't flip them on back faces, or every card seen from behind turns black.
+    // up for grass). Don't flip them on back faces, or every frond or blade seen from behind turns black.
     if (mat.side === THREE.DoubleSide) {
       shader.fragmentShader = shader.fragmentShader.replace(
         '#include <normal_fragment_begin>',
@@ -61,24 +80,84 @@ function windMaterial(
     }
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nuniform float uTime;')
+      .replace('#include <begin_vertex>', windChunk(strength, start));
+  };
+  mat.customProgramCacheKey = () => `wind-${strength}-${start}-${mat.side}`;
+  return mat;
+}
+
+/**
+ * Camera-facing leaf cards (geometry from `fluffCards`): each card's centre goes through the
+ * normal transform, then its `corner` offset is added in view space, scaled with the instance.
+ * The same trick in the shadow pass turns cards toward the light, so shadows stay leafy and full.
+ */
+function billboard(shader: { vertexShader: string; uniforms: Record<string, THREE.IUniform> }, time: { value: number }, strength: number, start: number): void {
+  shader.uniforms.uTime = time;
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\nuniform float uTime;\nattribute vec2 corner;')
+    .replace('#include <begin_vertex>', windChunk(strength, start))
+    .replace(
+      '#include <project_vertex>',
+      /* glsl */ `vec4 mvPosition = vec4( transformed, 1.0 );
+      float cardScale = 1.0;
+      #ifdef USE_INSTANCING
+        mvPosition = instanceMatrix * mvPosition;
+        cardScale = length( instanceMatrix[0].xyz );
+      #endif
+      mvPosition = modelViewMatrix * mvPosition;
+      mvPosition.xy += corner * cardScale;
+      gl_Position = projectionMatrix * mvPosition;`,
+    );
+}
+
+function fluffMaterials(map: THREE.Texture, time: { value: number }, strength: number, start: number) {
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, map, alphaTest: 0.5, alphaToCoverage: true });
+  material.onBeforeCompile = (shader) => billboard(shader, time, strength, start);
+  material.customProgramCacheKey = () => `fluff-${strength}-${start}`;
+  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.5 });
+  depth.onBeforeCompile = (shader) => billboard(shader, time, strength, start);
+  depth.customProgramCacheKey = () => `fluff-depth-${strength}-${start}`;
+  return { material, depth };
+}
+
+/**
+ * Stone: vertex-coloured, with fine mottling and speckle computed per pixel from the rock's own
+ * (object-space) position, so the pattern sticks to the rock and scales with it.
+ */
+function stoneMaterial(): THREE.MeshStandardMaterial {
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vStonePos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvStonePos = position;');
+    shader.fragmentShader = shader.fragmentShader
       .replace(
-        '#include <begin_vertex>',
-        /* glsl */ `#include <begin_vertex>
+        '#include <common>',
+        /* glsl */ `#include <common>
+        varying vec3 vStonePos;
+        float stoneHash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+        float stoneNoise(vec3 p) {
+          vec3 i = floor(p);
+          vec3 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(
+            mix(mix(stoneHash(i), stoneHash(i + vec3(1, 0, 0)), f.x), mix(stoneHash(i + vec3(0, 1, 0)), stoneHash(i + vec3(1, 1, 0)), f.x), f.y),
+            mix(mix(stoneHash(i + vec3(0, 0, 1)), stoneHash(i + vec3(1, 0, 1)), f.x), mix(stoneHash(i + vec3(0, 1, 1)), stoneHash(i + vec3(1, 1, 1)), f.x), f.y),
+            f.z);
+        }`,
+      )
+      .replace(
+        '#include <color_fragment>',
+        /* glsl */ `#include <color_fragment>
         {
-          vec2 basePos = vec2(0.0);
-          #ifdef USE_INSTANCING
-            basePos = vec2(instanceMatrix[3][0], instanceMatrix[3][2]);
-          #endif
-          float h = max(position.y - ${start.toFixed(2)}, 0.0);
-          float t = uTime + basePos.x * 0.21 + basePos.y * 0.17;
-          float gust = 0.6 + 0.4 * sin(uTime * 0.37 + basePos.x * 0.05);
-          float sway = (sin(t * 1.4) + 0.45 * sin(t * 2.9 + 1.3)) * gust;
-          transformed.x += sway * ${strength.toFixed(4)} * h * h;
-          transformed.z += cos(t * 1.1 + 0.7) * 0.6 * ${strength.toFixed(4)} * h * h;
+          vec3 q = vStonePos * 3.0;
+          float m = stoneNoise(q) * 0.55 + stoneNoise(q * 2.3) * 0.3 + stoneNoise(q * 5.1) * 0.15;
+          float speck = smoothstep(0.8, 0.95, stoneNoise(vStonePos * 31.0));
+          diffuseColor.rgb *= (0.72 + 0.5 * m) * (1.0 - 0.1 * speck);
         }`,
       );
   };
-  mat.customProgramCacheKey = () => `wind-${strength}-${start}-${mat.side}`;
+  mat.customProgramCacheKey = () => 'stone';
   return mat;
 }
 
@@ -110,42 +189,33 @@ export class Environment {
     const grassMat = this.track(windMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide }, 0.35, 0, this.time));
     const rockMat = this.track(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 }));
 
-    const leafTex = this.track(leafTexture());
-    const leafParams = { vertexColors: true, roughness: 0.8, map: leafTex, alphaTest: 0.5, side: THREE.DoubleSide, alphaToCoverage: true };
-    const leafMat = this.track(windMaterial(leafParams, 0.006, 2.2, this.time));
-    const bushLeafMat = this.track(windMaterial(leafParams, 0.03, 0.3, this.time));
     const fernMat = this.track(windMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }, 0.08, 0.05, this.time));
     const trees = [11, 23, 37, 51, 67].map(broadleafTree);
     const bushProps = [8, 19, 33].map(bush);
-    const broadleaf: PropKind = {
-      geometries: trees.map((t) => t.core),
-      material: foliage,
-      castShadow: true,
-      placements: [],
-      companion: { geometries: trees.map((t) => t.cards), material: leafMat, castShadow: true },
-    };
+    const broadleaf: PropKind = { geometries: trees.map((t) => t.core), material: foliage, castShadow: true, placements: [] };
+    const leafTex = this.track(leafClusterTexture());
+    const fluff = fluffMaterials(leafTex, this.time, 0.006, 2.2);
+    this.track(fluff.material);
+    this.track(fluff.depth);
+    // Leaf cards share the trees' placements (aliased below). They don't receive shadow maps:
+    // across hundreds of small cards that reads as speckle; the gradient is baked in instead.
+    const broadleafLeaves: PropKind = { geometries: trees.map((t) => t.cards), material: fluff.material, depthMaterial: fluff.depth, castShadow: true, receiveShadow: false, placements: [] };
     const pineProps = [5, 17, 29].map(pineTree);
-    const pines: PropKind = {
-      geometries: pineProps.map((p) => p.core),
-      material: foliage,
-      castShadow: true,
-      placements: [],
-      companion: { geometries: pineProps.map((p) => p.cards), material: leafMat, castShadow: true },
-    };
+    const pines: PropKind = { geometries: pineProps, material: foliage, castShadow: true, placements: [] };
     const palms: PropKind = { geometries: [3, 41, 77].map(palmTree), material: palmMat, castShadow: true, placements: [] };
-    const bushes: PropKind = {
-      geometries: bushProps.map((b) => b.core),
-      material: bushMat,
-      castShadow: true,
-      placements: [],
-      companion: { geometries: bushProps.map((b) => b.cards), material: bushLeafMat, castShadow: true },
-    };
+    const bushes: PropKind = { geometries: bushProps.map((b) => b.core), material: bushMat, castShadow: true, placements: [] };
+    const bushFluff = fluffMaterials(leafTex, this.time, 0.03, 0.3);
+    this.track(bushFluff.material);
+    this.track(bushFluff.depth);
+    const bushLeaves: PropKind = { geometries: bushProps.map((b) => b.cards), material: bushFluff.material, depthMaterial: bushFluff.depth, castShadow: true, receiveShadow: false, placements: [] };
     const ferns: PropKind = { geometries: [5, 6, 7].map(fern), material: fernMat, castShadow: false, placements: [] };
     const fungi: PropKind = { geometries: [3, 4, 9].map(mushrooms), material: rockMat, castShadow: false, placements: [] };
     const beachwood: PropKind = { geometries: [21, 22].map(driftwood), material: rockMat, castShadow: true, placements: [] };
     const stars: PropKind = { geometries: [1, 2, 3].map(starfish), material: rockMat, castShadow: false, placements: [] };
-    const rocks: PropKind = { geometries: [2, 13, 31, 47].map((s) => rock(s)), material: rockMat, castShadow: true, placements: [] };
-    const seaRocks: PropKind = { geometries: [61, 73].map((s) => rock(s, false)), material: rockMat, castShadow: true, placements: [] };
+    const stoneMat = this.track(stoneMaterial());
+    const rocks: PropKind = { geometries: [2, 13, 31, 47].map((s) => rock(s)), material: stoneMat, castShadow: true, placements: [] };
+    // Sea rocks, outcrops and pebbles are numerous and mostly seen from afar: fewer triangles.
+    const seaRocks: PropKind = { geometries: [61, 73, 89].map((s) => rock(s, false, 2)), material: stoneMat, castShadow: true, placements: [] };
     const grass: PropKind = { geometries: [1, 2, 3].map(grassTuft), material: grassMat, castShadow: false, placements: [] };
     const flowers: PropKind = {
       geometries: ['#ffffff', '#ffd23f', '#f78fb3', '#b8a1ff', '#ff9b54'].map((c, i) => flower(90 + i, c)),
@@ -153,12 +223,13 @@ export class Environment {
       castShadow: false,
       placements: [],
     };
-    const kinds = [broadleaf, pines, palms, bushes, rocks, seaRocks, flowers, ferns, fungi, beachwood, stars];
+    const kinds = [broadleaf, broadleafLeaves, pines, palms, bushes, bushLeaves, rocks, seaRocks, flowers, ferns, fungi, beachwood, stars];
     for (const k of [...kinds, grass]) {
       for (const g of k.geometries) this.track(g);
-      for (const g of k.companion?.geometries ?? []) this.track(g);
       k.placements = k.geometries.map(() => []);
     }
+    broadleafLeaves.placements = broadleaf.placements;
+    bushLeaves.placements = bushes.placements;
 
     // Reserve the lighthouse pad and the spawn area.
     this.occupied.push({ x: LIGHTHOUSE.x, z: LIGHTHOUSE.z, r: LIGHTHOUSE.padRadius + 3.5 });
@@ -495,26 +566,19 @@ export class Environment {
   }
 
   private buildInstances(kind: PropKind): void {
-    // Foliage (anything with leaf cards) shades itself via baked colours; receiving the cards'
-    // own shadows only speckles it with dark blotches.
-    const layers = [{ geometries: kind.geometries, material: kind.material, castShadow: kind.castShadow, receiveShadow: kind.castShadow && !kind.companion }];
-    // Leaf cards cast shadows but don't receive them: self-shadowing across thin cards reads as
-    // blotchy noise, and canopy shading is already baked into the card colours.
-    if (kind.companion) layers.push({ ...kind.companion, receiveShadow: false });
-    for (const layer of layers) {
-      layer.geometries.forEach((geo, i) => {
-        const list = kind.placements[i];
-        if (list.length === 0) return;
-        const mesh = new THREE.InstancedMesh(geo, layer.material, list.length);
-        list.forEach((p, j) => mesh.setMatrixAt(j, this.matrixFor(p)));
-        mesh.instanceMatrix.needsUpdate = true;
-        mesh.castShadow = layer.castShadow;
-        mesh.receiveShadow = layer.receiveShadow;
-        mesh.computeBoundingSphere();
-        this.group.add(mesh);
-        this.disposables.push({ dispose: () => mesh.dispose() });
-      });
-    }
+    kind.geometries.forEach((geo, i) => {
+      const list = kind.placements[i];
+      if (list.length === 0) return;
+      const mesh = new THREE.InstancedMesh(geo, kind.material, list.length);
+      list.forEach((p, j) => mesh.setMatrixAt(j, this.matrixFor(p)));
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.castShadow = kind.castShadow;
+      mesh.receiveShadow = kind.receiveShadow ?? kind.castShadow;
+      if (kind.depthMaterial) mesh.customDepthMaterial = kind.depthMaterial;
+      mesh.computeBoundingSphere();
+      this.group.add(mesh);
+      this.disposables.push({ dispose: () => mesh.dispose() });
+    });
   }
 
   /** Total number of placed instances (debugging/perf checks). */
