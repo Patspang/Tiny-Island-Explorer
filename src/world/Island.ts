@@ -143,6 +143,10 @@ export class Island implements GameWorld {
     return h < 1.5 ? 'sand' : 'grass';
   }
 
+  coastProximity(x: number, z: number): number {
+    return THREE.MathUtils.smoothstep(coastDistance(x, z), 0.55, 0.95);
+  }
+
   foliageAt(x: number, y: number, z: number): number {
     return this.environment.foliageAt(x, y, z);
   }

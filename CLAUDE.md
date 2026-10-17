@@ -10,7 +10,9 @@ A third-person exploration game set on a small stylized island. This is a game, 
 
 **Stage 2 (current): lighthouse quest.** Five lens pieces: woodland clearing and cliff top (find), ruin (one jump), sea rock via stepping stones (`ISLET`), keeper's hut roof via crates (`Lighthouse`). No beams by default; after 90 s without progress a hint beam rises over the nearest piece. A plaque by the door fills a socket per piece; the finale starts only at the door (`QuestGoal`), then the lamp relights and the scene blends to dusk. Logic in `src/quest/Quest.ts` (fixed step), presentation in `Lighthouse`, `Atmosphere.setDusk`, `Ocean.setDusk`, `ui/Overlays.ts`. Tests drive jumps deterministically via `window.__game.simulate`.
 
-Not yet: saving progress, sound, animated (rigged) character, inventory, NPCs, multiple islands. If a request implies one of these, say so and ask.
+**Sound and ambient effects (added after Stage 2):** all audio is synthesised with Web Audio in `src/audio` (no sample files): ambience (surf by coast distance, wind by height, birds/gulls by day, crickets at dusk), footsteps per surface, jump/land, bush rustle, quest cues; mute via M or the corner button (remembered in localStorage). Audio starts only after a user gesture. Ground/water particles live in `player/GroundEffects`.
+
+Not yet: saving progress, music, animated (rigged) character, inventory, NPCs, multiple islands. If a request implies one of these, say so and ask.
 
 ## Stack
 

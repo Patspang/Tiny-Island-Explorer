@@ -34,6 +34,8 @@ export interface GameWorld {
   isSafeSpot(x: number, feetY: number, z: number): boolean;
   /** Where a point sits on the ground, for footstep effects. */
   surfaceAt?(x: number, z: number): 'grass' | 'sand' | 'path' | 'rock';
+  /** 1 on the shore (or in the sea), falling to 0 well inland; drives the surf sound. */
+  coastProximity?(x: number, z: number): number;
   /** How deep a point is inside foliage the player can walk through (0..1), for leaf effects. */
   foliageAt?(x: number, y: number, z: number): number;
   /** `player` is the rendered feet position; plants bend away from it. */

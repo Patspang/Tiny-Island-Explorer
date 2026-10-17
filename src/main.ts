@@ -2,7 +2,7 @@ import './styles.css';
 import { Game } from './game/Game';
 import { createDebugHandle, type DebugHandle } from './game/debug';
 import { PhysicsWorld } from './physics/PhysicsWorld';
-import { FinaleScreen, Hint, PauseMenu, QuestHud, StartScreen } from './ui/Overlays';
+import { FinaleScreen, Hint, PauseMenu, QuestHud, SoundToggle, StartScreen } from './ui/Overlays';
 import { Island } from './world/Island';
 import { Sandbox } from './world/Sandbox';
 
@@ -18,7 +18,10 @@ async function boot(): Promise<void> {
   const mode = params.has('sandbox') ? 'sandbox' : 'island';
 
   let game: Game | null = null;
-  const start = new StartScreen(app, () => game?.play());
+  const start = new StartScreen(app, () => {
+    game?.audio.unlock();
+    game?.play();
+  });
   const pause = new PauseMenu(app, () => game?.resume());
   const finale = new FinaleScreen(app, () => {
     finale.setVisible(false);
@@ -29,6 +32,15 @@ async function boot(): Promise<void> {
   try {
     const physics = await PhysicsWorld.create();
     game = new Game(app, physics, (p) => (mode === 'sandbox' ? new Sandbox(p) : new Island(p)));
+    const audio = game.audio;
+    // Browsers only start audio from a user gesture; any click or key press will do.
+    for (const type of ['pointerdown', 'keydown'] as const) window.addEventListener(type, () => audio.unlock(), { passive: true });
+    const sound = new SoundToggle(app, () => {
+      audio.unlock();
+      audio.toggleMute();
+    });
+    sound.setMuted(audio.isMuted);
+    audio.onMuteChange = (muted) => sound.setMuted(muted);
     const quest = game.quest;
     const hud = quest ? new QuestHud(app, quest.total) : null;
     game.onQuest = (e) => {

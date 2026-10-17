@@ -272,3 +272,24 @@ kbd {
 .finale {
   background: radial-gradient(ellipse at center, rgba(60, 30, 40, 0) 30%, rgba(60, 30, 40, 0.35) 100%);
 }
+
+.sound-toggle {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 252, 244, 0.7);
+  color: var(--ink-soft);
+  cursor: pointer;
+  z-index: 5;
+  transition: background 0.2s ease;
+}
+
+.sound-toggle:hover {
+  background: rgba(255, 252, 244, 0.95);
+}
