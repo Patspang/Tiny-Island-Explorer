@@ -90,13 +90,6 @@ function trunk(rng: Rng, height: number, r0: number, r1: number, lean: number, c
 
 const LEAF_GREENS = ['#5e9e3e', '#6aab45', '#4f8f3a', '#79b54d', '#588f3c'];
 
-export interface FoliageProp {
-  /** Opaque parts: trunk, branches and the inner canopy volume. */
-  core: THREE.BufferGeometry;
-  /** Alpha-tested leaf cards around the canopy (uses the leaf texture). */
-  cards: THREE.BufferGeometry;
-}
-
 interface CanopyBlob {
   c: THREE.Vector3;
   r: number;
@@ -104,94 +97,66 @@ interface CanopyBlob {
 }
 
 /**
- * Leaf cards scattered over the outside of canopy blobs. Normals point away from the canopy
- * centre, so the cloud of cards shades like one soft volume while its silhouette stays leafy.
+ * Solid "cauliflower" canopy: each blob is a core sphere crowned with smaller puffs, so the
+ * silhouette is a clean scalloped cloud rather than a scatter of leaf cards. Lighting is baked
+ * into vertex colours across the whole canopy (lit, warm crown; cool, dark underside; darker
+ * toward the middle) so every puff shades as part of one volume.
  */
-function leafCards(rng: Rng, blobs: CanopyBlob[], perBlob: number, size: [number, number]): THREE.BufferGeometry {
+function canopy(rng: Rng, blobs: CanopyBlob[], puffsPerBlob: number, seed: number, detail = 1): THREE.BufferGeometry[] {
   const centroid = new THREE.Vector3();
   for (const b of blobs) centroid.add(b.c);
   centroid.divideScalar(blobs.length);
   let top = -Infinity;
   let bottom = Infinity;
+  let reach = 0;
   for (const b of blobs) {
     top = Math.max(top, b.c.y + b.r);
     bottom = Math.min(bottom, b.c.y - b.r);
+    reach = Math.max(reach, Math.hypot(b.c.x - centroid.x, b.c.z - centroid.z) + b.r);
   }
-  const pos: number[] = [];
-  const nor: number[] = [];
-  const uv: number[] = [];
-  const col: number[] = [];
-  const idx: number[] = [];
+  const parts: THREE.BufferGeometry[] = [];
   const dir = new THREE.Vector3();
-  const n = new THREE.Vector3();
-  const sn = new THREE.Vector3();
-  const u = new THREE.Vector3();
-  const v = new THREE.Vector3();
+  const add = (centre: THREE.Vector3, r: number, color: THREE.Color, n: number, d: number) => {
+    const g = smoothIco(r, d);
+    lumpy(g, 0.12, seed + n * 7.3);
+    g.translate(centre.x, centre.y, centre.z);
+    parts.push(prep(g, color));
+  };
+  blobs.forEach((b, i) => {
+    add(b.c, b.r * 0.82, b.color, i, 1);
+    for (let k = 0; k < puffsPerBlob; k++) {
+      // Puffs sit on the upper and outer surface, where light lands and the silhouette forms.
+      dir.set(rng() * 2 - 1, rng() * 1.3 - 0.25, rng() * 2 - 1).normalize();
+      const r = b.r * (0.5 + rng() * 0.16);
+      const p = b.c.clone().addScaledVector(dir, b.r * 0.82 - r * 0.35);
+      add(p, r, b.color.clone().offsetHSL((rng() - 0.5) * 0.02, 0, (rng() - 0.5) * 0.05), i * 31 + k, detail);
+    }
+  });
+  const warm = new THREE.Color('#c4dc6a');
+  const cool = new THREE.Color('#1f4a3a');
   const c = new THREE.Color();
-  for (const b of blobs) {
-    for (let i = 0; i < perBlob; i++) {
-      // Point on (or just inside) the blob surface, biased away from the underside.
-      dir.set(rng() * 2 - 1, rng() * 1.6 - 0.5, rng() * 2 - 1).normalize();
-      const p = b.c.clone().addScaledVector(dir, b.r * (0.72 + rng() * 0.3));
-      n.copy(p).sub(centroid).normalize();
-      // Shading normal is biased up so underside cards don't face away from all light and go black.
-      sn.copy(n).setY(n.y + 0.8).normalize();
-      // Card plane: roughly facing outward, randomly twisted.
-      const tilt = new THREE.Vector3(rng() - 0.5, rng() - 0.5, rng() - 0.5).multiplyScalar(1.2);
-      const face = n.clone().add(tilt).normalize();
-      u.set(0, 1, 0).cross(face);
-      if (u.lengthSq() < 1e-4) u.set(1, 0, 0);
-      u.normalize();
-      v.crossVectors(face, u).normalize();
-      const spin = rng() * Math.PI * 2;
-      const cu = u.clone().multiplyScalar(Math.cos(spin)).addScaledVector(v, Math.sin(spin));
-      const cv = face.clone().cross(cu).normalize();
-      const sz = size[0] + rng() * (size[1] - size[0]);
-      const base = pos.length / 3;
-      const corners: Array<[number, number]> = [
-        [-1, -1],
-        [1, -1],
-        [1, 1],
-        [-1, 1],
-      ];
-      // Light from above, darker underneath and inside: cheap canopy self-shadowing.
-      const height = (p.y - bottom) / Math.max(0.01, top - bottom);
-      const ao = 0.68 + 0.42 * height;
-      c.copy(b.color).offsetHSL((rng() - 0.5) * 0.05, (rng() - 0.5) * 0.08, (rng() - 0.5) * 0.1).multiplyScalar(ao);
-      for (const [a, bb] of corners) {
-        pos.push(p.x + cu.x * a * sz * 0.5 + cv.x * bb * sz * 0.5, p.y + cu.y * a * sz * 0.5 + cv.y * bb * sz * 0.5, p.z + cu.z * a * sz * 0.5 + cv.z * bb * sz * 0.5);
-        nor.push(sn.x, sn.y, sn.z);
-        uv.push((a + 1) / 2, (bb + 1) / 2);
-        col.push(c.r, c.g, c.b);
-      }
-      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  for (const g of parts) {
+    const pos = g.getAttribute('position');
+    const nor = g.getAttribute('normal');
+    const col = g.getAttribute('color');
+    for (let i = 0; i < pos.count; i++) {
+      const height = THREE.MathUtils.clamp((pos.getY(i) - bottom) / Math.max(0.01, top - bottom), 0, 1);
+      const out = THREE.MathUtils.clamp(Math.hypot(pos.getX(i) - centroid.x, pos.getZ(i) - centroid.z) / reach, 0, 1);
+      const up = nor.getY(i);
+      c.setRGB(col.getX(i), col.getY(i), col.getZ(i));
+      // Interior and underside fall off toward a cool shadow green; the crown warms up.
+      const light = THREE.MathUtils.clamp(0.35 + 0.4 * height + 0.25 * out + 0.2 * up, 0, 1.15);
+      c.multiplyScalar(0.45 + 0.6 * light);
+      c.lerp(cool, THREE.MathUtils.clamp(0.4 - light * 0.5, 0, 0.3));
+      c.lerp(warm, THREE.MathUtils.clamp((up - 0.4) * 0.35 * height, 0, 0.25));
+      col.setXYZ(i, c.r, c.g, c.b);
     }
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.setIndex(idx);
-  g.computeBoundingSphere();
-  return g;
+  return parts;
 }
 
-/** Inner canopy volume: lumpy blobs a little smaller than the card shell. */
-function canopyCore(blobs: CanopyBlob[], seed: number): THREE.BufferGeometry[] {
-  return blobs.map((b, i) => {
-    // Dark backfill only: the leaf cards provide the visible surface.
-    const g = smoothIco(b.r * 0.68, 1);
-    lumpy(g, 0.25, seed + i * 13);
-    g.translate(b.c.x, b.c.y, b.c.z);
-    const p = prep(g, b.color.clone().multiplyScalar(0.55));
-    shadeBlob(p, b.c.y, b.r, 0.5);
-    return p;
-  });
-}
-
-/** Broadleaf tree: flared, bent trunk that forks into branches carrying leafy canopy clusters. */
-export function broadleafTree(seed: number): FoliageProp {
+/** Broadleaf tree: flared, bent trunk that forks into branches carrying puffy canopy clusters. */
+export function broadleafTree(seed: number): THREE.BufferGeometry {
   const rng = createRng(seed);
   const h = 2.3 + rng() * 0.8;
   const lean = 0.2 + rng() * 0.3;
@@ -220,12 +185,12 @@ export function broadleafTree(seed: number): FoliageProp {
       color: baseColor.clone().offsetHSL((rng() - 0.5) * 0.03, 0, (rng() - 0.5) * 0.08),
     });
   }
-  parts.push(...canopyCore(blobs, seed));
-  return { core: merge(parts), cards: leafCards(rng, blobs, 60, [0.85, 1.25]) };
+  parts.push(...canopy(rng, blobs, 4, seed, 2));
+  return merge(parts);
 }
 
-/** Low bush: a leafy shell of cards over a compact core. */
-export function bush(seed: number): FoliageProp {
+/** Low bush: a few puffy clumps hugging the ground. */
+export function bush(seed: number): THREE.BufferGeometry {
   const rng = createRng(seed);
   const base = new THREE.Color(LEAF_GREENS[Math.floor(rng() * LEAF_GREENS.length)]);
   const blobs: CanopyBlob[] = [];
@@ -235,7 +200,7 @@ export function bush(seed: number): FoliageProp {
     const a = (i / n) * Math.PI * 2 + rng() * 0.5;
     blobs.push({ c: new THREE.Vector3(Math.cos(a) * 0.4, r * 0.75, Math.sin(a) * 0.4), r, color: base.clone().offsetHSL(0, 0, (rng() - 0.5) * 0.08) });
   }
-  return { core: merge(canopyCore(blobs, seed * 7)), cards: leafCards(rng, blobs, 28, [0.45, 0.7]) };
+  return merge(canopy(rng, blobs, 2, seed * 7, 2));
 }
 
 /**
@@ -590,46 +555,6 @@ function taperTube(
   }
   geo.computeVertexNormals();
   return geo;
-}
-
-/** Leaf-cluster texture (near-white; tinted per card by vertex colour). */
-export function leafTexture(): THREE.CanvasTexture {
-  const size = 128;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-  const rng = createRng(77);
-  const leaf = (x: number, y: number, len: number, wid: number, rot: number, shade: number) => {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(rot);
-    const g = ctx.createLinearGradient(0, 0, len, 0);
-    g.addColorStop(0, `rgb(${170 * shade},${180 * shade},${160 * shade})`);
-    g.addColorStop(1, `rgb(${255 * shade},${255 * shade},${235 * shade})`);
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.quadraticCurveTo(len * 0.45, -wid, len, 0);
-    ctx.quadraticCurveTo(len * 0.45, wid, 0, 0);
-    ctx.fill();
-    ctx.strokeStyle = `rgba(90,100,70,0.45)`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(len * 0.08, 0);
-    ctx.lineTo(len * 0.9, 0);
-    ctx.stroke();
-    ctx.restore();
-  };
-  // Leaves radiate from the middle and fill most of the tile, so cards read as dense clumps.
-  for (let i = 0; i < 40; i++) {
-    const a = rng() * Math.PI * 2;
-    const r = Math.sqrt(rng()) * size * 0.16;
-    leaf(size / 2 + Math.cos(a) * r, size / 2 + Math.sin(a) * r, size * (0.24 + rng() * 0.12), size * (0.075 + rng() * 0.035), a + (rng() - 0.5) * 0.9, 0.82 + rng() * 0.18);
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
 }
 
 /** Fern: a rosette of arching fronds made of small leaflets. */

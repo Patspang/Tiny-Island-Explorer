@@ -13,7 +13,7 @@ import {
   SPAWN,
 } from './IslandShape';
 import { createRng, fbm2, smoothstep } from './noise';
-import { broadleafTree, bush, driftwood, fern, flower, grassTuft, leafTexture, mushrooms, palmTree, pineTree, rock, starfish } from './props';
+import { broadleafTree, bush, driftwood, fern, flower, grassTuft, mushrooms, palmTree, pineTree, rock, starfish } from './props';
 import type { ObstacleInfo } from './World';
 
 interface Placement {
@@ -31,8 +31,6 @@ interface PropKind {
   material: THREE.Material;
   castShadow: boolean;
   placements: Placement[][];
-  /** Second mesh per variant drawn with the same placements (e.g. leaf cards). */
-  companion?: { geometries: THREE.BufferGeometry[]; material: THREE.Material; castShadow: boolean };
 }
 
 /** Grass is split into chunks so off-screen and distant patches can be skipped. */
@@ -52,7 +50,7 @@ function windMaterial(
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
     // Foliage is two-sided but its normals describe the plant's volume (outward from a canopy,
-    // up for grass). Don't flip them on back faces, or every card seen from behind turns black.
+    // up for grass). Don't flip them on back faces, or every frond or blade seen from behind turns black.
     if (mat.side === THREE.DoubleSide) {
       shader.fragmentShader = shader.fragmentShader.replace(
         '#include <normal_fragment_begin>',
@@ -110,31 +108,14 @@ export class Environment {
     const grassMat = this.track(windMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide }, 0.35, 0, this.time));
     const rockMat = this.track(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 }));
 
-    const leafTex = this.track(leafTexture());
-    const leafParams = { vertexColors: true, roughness: 0.8, map: leafTex, alphaTest: 0.5, side: THREE.DoubleSide, alphaToCoverage: true };
-    const leafMat = this.track(windMaterial(leafParams, 0.006, 2.2, this.time));
-    const bushLeafMat = this.track(windMaterial(leafParams, 0.03, 0.3, this.time));
     const fernMat = this.track(windMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }, 0.08, 0.05, this.time));
     const trees = [11, 23, 37, 51, 67].map(broadleafTree);
     const bushProps = [8, 19, 33].map(bush);
-    const broadleaf: PropKind = {
-      geometries: trees.map((t) => t.core),
-      material: foliage,
-      castShadow: true,
-      placements: [],
-      companion: { geometries: trees.map((t) => t.cards), material: leafMat, castShadow: true },
-    };
+    const broadleaf: PropKind = { geometries: trees, material: foliage, castShadow: true, placements: [] };
     const pineProps = [5, 17, 29].map(pineTree);
-    // Pines are solid tiers, so they also receive shadows: upper tiers shade the ones below.
     const pines: PropKind = { geometries: pineProps, material: foliage, castShadow: true, placements: [] };
     const palms: PropKind = { geometries: [3, 41, 77].map(palmTree), material: palmMat, castShadow: true, placements: [] };
-    const bushes: PropKind = {
-      geometries: bushProps.map((b) => b.core),
-      material: bushMat,
-      castShadow: true,
-      placements: [],
-      companion: { geometries: bushProps.map((b) => b.cards), material: bushLeafMat, castShadow: true },
-    };
+    const bushes: PropKind = { geometries: bushProps, material: bushMat, castShadow: true, placements: [] };
     const ferns: PropKind = { geometries: [5, 6, 7].map(fern), material: fernMat, castShadow: false, placements: [] };
     const fungi: PropKind = { geometries: [3, 4, 9].map(mushrooms), material: rockMat, castShadow: false, placements: [] };
     const beachwood: PropKind = { geometries: [21, 22].map(driftwood), material: rockMat, castShadow: true, placements: [] };
@@ -151,7 +132,6 @@ export class Environment {
     const kinds = [broadleaf, pines, palms, bushes, rocks, seaRocks, flowers, ferns, fungi, beachwood, stars];
     for (const k of [...kinds, grass]) {
       for (const g of k.geometries) this.track(g);
-      for (const g of k.companion?.geometries ?? []) this.track(g);
       k.placements = k.geometries.map(() => []);
     }
 
@@ -490,26 +470,18 @@ export class Environment {
   }
 
   private buildInstances(kind: PropKind): void {
-    // Foliage (anything with leaf cards) shades itself via baked colours; receiving the cards'
-    // own shadows only speckles it with dark blotches.
-    const layers = [{ geometries: kind.geometries, material: kind.material, castShadow: kind.castShadow, receiveShadow: kind.castShadow && !kind.companion }];
-    // Leaf cards cast shadows but don't receive them: self-shadowing across thin cards reads as
-    // blotchy noise, and canopy shading is already baked into the card colours.
-    if (kind.companion) layers.push({ ...kind.companion, receiveShadow: false });
-    for (const layer of layers) {
-      layer.geometries.forEach((geo, i) => {
-        const list = kind.placements[i];
-        if (list.length === 0) return;
-        const mesh = new THREE.InstancedMesh(geo, layer.material, list.length);
-        list.forEach((p, j) => mesh.setMatrixAt(j, this.matrixFor(p)));
-        mesh.instanceMatrix.needsUpdate = true;
-        mesh.castShadow = layer.castShadow;
-        mesh.receiveShadow = layer.receiveShadow;
-        mesh.computeBoundingSphere();
-        this.group.add(mesh);
-        this.disposables.push({ dispose: () => mesh.dispose() });
-      });
-    }
+    kind.geometries.forEach((geo, i) => {
+      const list = kind.placements[i];
+      if (list.length === 0) return;
+      const mesh = new THREE.InstancedMesh(geo, kind.material, list.length);
+      list.forEach((p, j) => mesh.setMatrixAt(j, this.matrixFor(p)));
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.castShadow = kind.castShadow;
+      mesh.receiveShadow = kind.castShadow;
+      mesh.computeBoundingSphere();
+      this.group.add(mesh);
+      this.disposables.push({ dispose: () => mesh.dispose() });
+    });
   }
 
   /** Total number of placed instances (debugging/perf checks). */
