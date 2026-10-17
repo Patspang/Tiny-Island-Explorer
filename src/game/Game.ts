@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { AudioEngine } from '../audio/AudioEngine';
+import { Sparkles } from '../fx/Sparkles';
+import { Wildlife } from '../fx/Wildlife';
 import { CAMERA, PHYSICS, PLAYER, RENDER } from '../config';
 import { FollowCamera } from '../camera/FollowCamera';
 import { GROUP, groups, PhysicsWorld } from '../physics/PhysicsWorld';
@@ -35,13 +38,21 @@ export class Game {
   readonly followCamera: FollowCamera;
   readonly player: PlayerController;
   readonly visual: PlayerVisual;
-  private readonly effects = new GroundEffects();
+  readonly audio = new AudioEngine();
+  private readonly sparkles = new Sparkles();
+  readonly wildlife: Wildlife;
+  private readonly effects = new GroundEffects({
+    footstep: (surface, strength) => this.audio.footstep(surface, strength),
+    jump: () => this.audio.jump(),
+    land: (impact, surface) => this.audio.land(impact, surface),
+  });
   private readonly drawingSize = new THREE.Vector2();
   readonly world: GameWorld;
   readonly atmosphere: Atmosphere;
   readonly quest: Quest | null;
   onQuest: (e: QuestUiEvent) => void = () => {};
   private questDoneSent = false;
+  private readonly sparkled: boolean[] = [];
 
   state: GameState = 'title';
   onStateChange: (state: GameState) => void = () => {};
@@ -84,19 +95,37 @@ export class Game {
     this.followCamera = new FollowCamera(this.renderer.domElement, physics, (x, z) => this.world.groundHeight(x, z));
     this.player = new PlayerController(physics, this.world.spawn, (x, y, z) => this.world.isSafeSpot(x, y, z));
     this.visual = new PlayerVisual();
-    this.scene.add(this.visual.root, this.visual.shadowMesh, this.effects.points);
+    this.wildlife = new Wildlife(this.world.habitats ?? { meadows: [], woods: [], coast: [] }, (x, z) => this.world.groundHeight(x, z));
+    this.scene.add(this.wildlife.group);
+    this.scene.add(this.visual.root, this.visual.shadowMesh, this.effects.group, this.sparkles.points);
 
     const layout = this.world.quest;
     this.quest = layout
       ? new Quest(layout.spots, layout.goal, {
           onCollect: (collected, total, label) => {
             this.world.setQuestProgress?.(collected, total);
+            this.audio.collect(collected - 1, total);
+            this.burstNewlyCollected();
             this.onQuest({ type: 'collect', collected, total, label });
           },
-          onHint: (label) => this.onQuest({ type: 'hint', label }),
-          onDoorLocked: (missing) => this.onQuest({ type: 'doorLocked', missing }),
-          onComplete: () => this.onQuest({ type: 'complete' }),
-          onFinaleStart: () => this.onQuest({ type: 'finaleStart' }),
+          onHint: (label) => {
+            this.audio.hint();
+            this.onQuest({ type: 'hint', label });
+          },
+          onDoorLocked: (missing) => {
+            this.audio.doorLocked();
+            this.onQuest({ type: 'doorLocked', missing });
+          },
+          onComplete: () => {
+            this.audio.complete();
+            this.onQuest({ type: 'complete' });
+          },
+          onFinaleStart: () => {
+            this.audio.finale();
+            const lamp = this.world.lampPosition?.();
+            if (lamp) this.sparkles.shower(lamp);
+            this.onQuest({ type: 'finaleStart' });
+          },
         })
       : null;
     if (this.quest) {
@@ -110,6 +139,7 @@ export class Game {
     this.input.onAction('KeyR', () => {
       if (this.state === 'playing') this.player.respawn();
     });
+    this.input.onAction('KeyM', () => this.audio.toggleMute());
     this.input.onAction('Escape', () => this.togglePause());
     this.input.onAction('KeyP', () => this.togglePause());
     window.addEventListener('blur', this.onBlur);
@@ -157,6 +187,7 @@ export class Game {
     const active = state === 'playing';
     this.input.enabled = active;
     this.followCamera.enabled = active;
+    this.audio.setPaused(state === 'paused' || state === 'overlay');
     if (!active) {
       this.input.clear();
       this.followCamera.cancelDrag();
@@ -240,6 +271,13 @@ export class Game {
     this.visual.update(frameDt, visualState, groundY);
     this.renderer.getDrawingBufferSize(this.drawingSize);
     this.effects.update(frameDt, visualState, this.world, this.followCamera.camera, this.drawingSize.y);
+    this.wildlife.update(frameDt, this.renderTime, this.quest?.duskLevel ?? 0, this.renderFeet, this.followCamera.camera, this.drawingSize.y);
+    this.audio.update(frameDt, {
+      coast: this.world.coastProximity?.(this.renderFeet.x, this.renderFeet.z) ?? 0.5,
+      height: THREE.MathUtils.clamp(this.renderFeet.y / 15, 0, 1),
+      dusk: this.quest?.duskLevel ?? 0,
+      rustle: this.effects.rustle,
+    });
     this.pendingImpact = 0;
     this.pendingJump = false;
 
@@ -249,10 +287,28 @@ export class Game {
     this.renderer.render(this.scene, this.followCamera.camera);
   }
 
-  private updateQuestPresentation(dt: number): void {
+  /** Sparkle burst at whichever piece was just picked up. */
+  private burstNewlyCollected(): void {
     const q = this.quest;
     if (!q) return;
+    q.spots.forEach((spot, i) => {
+      if (q.isCollected(i) && !this.sparkled[i]) {
+        this.sparkled[i] = true;
+        this.sparkles.burst(spot.position);
+      }
+    });
+  }
+
+  private updateQuestPresentation(dt: number): void {
+    const q = this.quest;
+    this.renderer.getDrawingBufferSize(this.drawingSize);
+    this.sparkles.update(dt, this.followCamera.camera, this.drawingSize.y);
+    if (!q) return;
     q.update(dt, this.renderTime, this.followCamera.camera.position);
+    const cam = this.followCamera.camera.position;
+    q.spots.forEach((spot, i) => {
+      if (!q.isCollected(i) && spot.position.distanceToSquared(cam) < 60 * 60) this.sparkles.glint(spot.position, dt);
+    });
     this.world.setLighthouseLight?.(q.lightLevel);
     this.atmosphere.setDusk(q.duskLevel);
     this.world.setDusk?.(q.duskLevel, this.atmosphere.horizon);
@@ -336,6 +392,9 @@ export class Game {
     this.player.dispose();
     this.visual.dispose();
     this.effects.dispose();
+    this.audio.dispose();
+    this.sparkles.dispose();
+    this.wildlife.dispose();
     this.world.dispose();
     this.quest?.dispose();
     this.atmosphere.dispose();

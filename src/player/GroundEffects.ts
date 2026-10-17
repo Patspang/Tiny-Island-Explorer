@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { PLAYER } from '../config';
+import type { Surface } from '../audio/sounds';
+import { PLAYER, WORLD } from '../config';
 import type { GameWorld } from '../world/World';
 import type { PlayerVisualState } from './PlayerVisual';
 
@@ -9,6 +10,16 @@ const LEAF = 1;
 
 const MAX = 192;
 const STRIDE = 0.62;
+const RIPPLES = 16;
+/** Feet this far below the water surface count as wading. */
+const WADE_DEPTH = 0.04;
+
+/** Moments other systems (sound) care about, reported as they happen. */
+export interface GroundEvents {
+  footstep(surface: Surface, strength: number): void;
+  jump(surface: Surface): void;
+  land(impact: number, surface: Surface): void;
+}
 
 interface Particle {
   life: number;
@@ -27,17 +38,27 @@ const COLORS = {
   sand: new THREE.Color('#eadcbc'),
   path: new THREE.Color('#d9c49b'),
   rock: new THREE.Color('#c9c2b4'),
+  spray: [new THREE.Color('#ffffff'), new THREE.Color('#dff4f7'), new THREE.Color('#bfe8ee')],
   grass: [new THREE.Color('#7fb24a'), new THREE.Color('#9fca5c'), new THREE.Color('#6a9d3f')],
   leaf: [new THREE.Color('#5f9e3c'), new THREE.Color('#7cba4c'), new THREE.Color('#4f8a35')],
 };
 
 /**
  * Small, cheap reactions where the explorer meets the ground and the plants: dust on sand and
- * paths, flicked grass on grass, a ring on landing, and leaves shaken loose when pushing through
- * a bush. One `Points` draw call; purely cosmetic, reads player and world state only.
+ * paths, flicked grass on grass, spray and ripples when wading, a ring on landing, and leaves
+ * shaken loose when pushing through a bush. One `Points` draw call plus one instanced mesh for
+ * ripples; purely cosmetic, reads player and world state only.
  */
 export class GroundEffects {
+  readonly group = new THREE.Group();
   readonly points: THREE.Points;
+  /** How hard the player is pushing through foliage right now (0..1), for the rustle sound. */
+  rustle = 0;
+  private readonly ripples: THREE.InstancedMesh;
+  private readonly rippleState = Array.from({ length: RIPPLES }, () => ({ x: 0, z: 0, age: 1, life: 1, size: 1 }));
+  private nextRipple = 0;
+  private readonly tmpMatrix = new THREE.Matrix4();
+  private readonly tmpColor = new THREE.Color();
   private readonly particles: Particle[] = [];
   private readonly position = new Float32Array(MAX * 3);
   private readonly color = new Float32Array(MAX * 3);
@@ -51,7 +72,7 @@ export class GroundEffects {
   private foot = 1;
   private leafBudget = 0;
 
-  constructor() {
+  constructor(private readonly events?: GroundEvents) {
     for (let i = 0; i < MAX; i++) {
       this.particles.push({ life: 0, maxLife: 1, kind: PUFF, vel: new THREE.Vector3(), size0: 0, size1: 0, alpha: 0, gravity: 0, drag: 0, spin: 0 });
     }
@@ -108,13 +129,25 @@ export class GroundEffects {
     this.points = new THREE.Points(g, this.material);
     this.points.frustumCulled = false;
     this.points.renderOrder = 2;
+
+    // Ripples: flat rings on the water, faded by colour under additive blending.
+    const ringGeo = new THREE.RingGeometry(0.82, 1, 40).rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.ripples = new THREE.InstancedMesh(ringGeo, ringMat, RIPPLES);
+    this.ripples.frustumCulled = false;
+    this.ripples.renderOrder = 2;
+    for (let i = 0; i < RIPPLES; i++) {
+      this.ripples.setMatrixAt(i, this.tmpMatrix.makeScale(0, 0, 0));
+      this.ripples.setColorAt(i, this.tmpColor.setRGB(0, 0, 0));
+    }
+    this.group.add(this.points, this.ripples);
   }
 
   /** `viewportHeight` in device pixels, so particle sizes are in metres. */
   update(dt: number, s: PlayerVisualState, world: GameWorld, camera: THREE.PerspectiveCamera, viewportHeight: number): void {
     this.material.uniforms.uScale.value = (viewportHeight * 0.5) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     const speed = Math.hypot(s.velocity.x, s.velocity.z);
-    const surface = world.surfaceAt?.(s.feet.x, s.feet.z) ?? 'path';
+    const surface: Surface = s.feet.y < WORLD.waterLevel - WADE_DEPTH ? 'water' : (world.surfaceAt?.(s.feet.x, s.feet.z) ?? 'path');
 
     // Footfalls: one small burst per stride, alternating feet, more when running.
     if (s.grounded && speed > 1.2 && dt > 0) {
@@ -125,10 +158,13 @@ export class GroundEffects {
         const run = THREE.MathUtils.clamp((speed - PLAYER.walkSpeed) / (PLAYER.runSpeed - PLAYER.walkSpeed), 0, 1);
         const side = new THREE.Vector3(s.velocity.z, 0, -s.velocity.x).normalize().multiplyScalar(0.1 * this.foot);
         this.footfall(s.feet.clone().add(side), surface, 1 + Math.round(run * 2), s.velocity, 0.6 + 0.4 * run);
+        this.events?.footstep(surface, 0.3 + 0.7 * run);
       }
     }
     if (s.landedImpact > 2) {
-      const n = Math.min(16, 6 + Math.round(s.landedImpact * 1.2));
+      this.events?.land(s.landedImpact, surface);
+      if (surface === 'water') this.ripple(s.feet, 1.2 + s.landedImpact * 0.08, 1.1);
+      const n = surface === 'water' ? 2 : Math.min(16, 6 + Math.round(s.landedImpact * 1.2));
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2;
         const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
@@ -136,11 +172,13 @@ export class GroundEffects {
       }
     }
     if (s.justJumped) {
+      this.events?.jump(surface);
       for (let i = 0; i < 5; i++) this.footfall(s.feet, surface, 1, s.velocity.clone().multiplyScalar(-0.15), 0.7);
     }
 
     // Leaves shaken loose while pushing through a bush.
     const inside = world.foliageAt?.(s.feet.x, s.feet.y, s.feet.z) ?? 0;
+    this.rustle = inside > 0 ? Math.min(1, (0.3 + inside) * Math.min(1, speed / PLAYER.walkSpeed)) : 0;
     if (inside > 0 && speed > 0.5) {
       this.leafBudget += dt * (3 + 14 * inside) * Math.min(1, speed / PLAYER.walkSpeed);
       while (this.leafBudget >= 1) {
@@ -155,9 +193,42 @@ export class GroundEffects {
     }
 
     this.step(dt);
+    this.stepRipples(dt);
   }
 
-  private footfall(at: THREE.Vector3, surface: 'grass' | 'sand' | 'path' | 'rock', count: number, push: THREE.Vector3, strength: number): void {
+  /** Start an expanding ring on the water surface at `at`. */
+  private ripple(at: THREE.Vector3, size: number, life: number): void {
+    const r = this.rippleState[this.nextRipple];
+    this.nextRipple = (this.nextRipple + 1) % RIPPLES;
+    Object.assign(r, { x: at.x, z: at.z, age: 0, life, size });
+  }
+
+  private stepRipples(dt: number): void {
+    const y = WORLD.waterLevel + 0.03;
+    this.rippleState.forEach((r, i) => {
+      if (r.age >= r.life) return;
+      r.age += dt;
+      const t = Math.min(1, r.age / r.life);
+      const scale = r.size * (0.25 + 0.75 * Math.sqrt(t));
+      this.ripples.setMatrixAt(i, this.tmpMatrix.makeScale(scale, 1, scale).setPosition(r.x, y, r.z));
+      const fade = 0.55 * (1 - t) * (1 - t);
+      this.ripples.setColorAt(i, this.tmpColor.setRGB(fade, fade, fade));
+    });
+    this.ripples.instanceMatrix.needsUpdate = true;
+    if (this.ripples.instanceColor) this.ripples.instanceColor.needsUpdate = true;
+  }
+
+  private footfall(at: THREE.Vector3, surface: Surface, count: number, push: THREE.Vector3, strength: number): void {
+    if (surface === 'water') {
+      // Spray thrown up and forward, and a ring spreading where the foot went in.
+      for (let i = 0; i < 4 + count * 3; i++) {
+        const vel = new THREE.Vector3((Math.random() - 0.5) * 1.6, 1.8 + Math.random() * 1.6, (Math.random() - 0.5) * 1.6).addScaledVector(push, 0.2);
+        const p = new THREE.Vector3(at.x, WORLD.waterLevel + 0.05, at.z);
+        this.emit(p, vel, pick(COLORS.spray), PUFF, 0.45 + Math.random() * 0.25, 0.06, 0.04, 0.9, 9, 0.8, 0);
+      }
+      this.ripple(at, 0.55 + 0.35 * strength, 0.9);
+      return;
+    }
     for (let i = 0; i < count; i++) {
       const jitter = new THREE.Vector3((Math.random() - 0.5) * 0.15, 0.03, (Math.random() - 0.5) * 0.15);
       const p = at.clone().add(jitter);
@@ -227,6 +298,9 @@ export class GroundEffects {
   dispose(): void {
     this.points.geometry.dispose();
     this.material.dispose();
+    this.ripples.geometry.dispose();
+    (this.ripples.material as THREE.Material).dispose();
+    this.ripples.dispose();
   }
 }
 

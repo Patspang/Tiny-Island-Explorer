@@ -220,6 +220,9 @@ export class Environment {
   private readonly occupied: Array<{ x: number; z: number; r: number }> = [];
   private readonly grassChunks: Array<{ mesh: THREE.InstancedMesh; centre: THREE.Vector3 }> = [];
   private readonly bushSpots: Array<{ x: number; y: number; z: number; r: number }> = [];
+  /** Flower-patch centres (butterflies) and wood centres (fireflies). */
+  readonly meadows: Array<{ x: number; y: number; z: number }> = [];
+  readonly woods: Array<{ x: number; y: number; z: number }> = [];
 
   constructor(physics: PhysicsWorld) {
     const rng = createRng(4242);
@@ -441,6 +444,7 @@ export class Environment {
       const cz = (rng() - 0.5) * 110;
       const colour = Math.floor(rng() * flowers.geometries.length);
       const size = 8 + Math.floor(rng() * 18);
+      let placed = 0;
       for (let i = 0; i < size; i++) {
         const a = rng() * Math.PI * 2;
         const r = Math.sqrt(rng()) * 3.2;
@@ -450,8 +454,11 @@ export class Environment {
         if (!this.isGround(x, z, y, 1.6, 0.85, false) || distanceToPath(x, z) < 1.5) continue;
         const variant = rng() < 0.85 ? colour : Math.floor(rng() * flowers.geometries.length);
         flowers.placements[variant].push({ x, y: y - 0.02, z, rotY: rng() * Math.PI * 2, scale: 0.8 + rng() * 0.5 });
+        placed++;
       }
+      if (placed >= 4) this.meadows.push({ x: cx, y: heightAt(cx, cz), z: cz });
     }
+    for (const c of clusterCentres) this.woods.push({ x: c.x, y: heightAt(c.x, c.z), z: c.z });
 
     // --- Woodland floor: ferns and mushrooms around the woods.
     for (const c of clusterCentres) {

@@ -7,6 +7,7 @@ const CONTROLS: ReadonlyArray<[string, string]> = [
   ['Drag mouse', 'Look around'],
   ['Mouse wheel', 'Zoom'],
   ['R', 'Back to the beach'],
+  ['M', 'Sound on / off'],
   ['Esc', 'Pause'],
 ];
 
@@ -102,7 +103,7 @@ export class Hint {
   constructor(parent: HTMLElement) {
     this.el = document.createElement('div');
     this.el.className = 'hint hidden';
-    this.el.textContent = 'Esc to pause · R to return to the beach';
+    this.el.textContent = 'Esc to pause · R to return to the beach · M for sound';
     parent.appendChild(this.el);
   }
 
@@ -115,6 +116,32 @@ export class Hint {
   hide(): void {
     window.clearTimeout(this.timer);
     this.el.classList.add('hidden');
+  }
+}
+
+const SPEAKER = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>`;
+
+/** Sound on/off button (bottom-right). */
+export class SoundToggle {
+  readonly el: HTMLButtonElement;
+
+  constructor(parent: HTMLElement, onToggle: () => void) {
+    this.el = document.createElement('button');
+    this.el.type = 'button';
+    this.el.className = 'sound-toggle';
+    this.el.addEventListener('click', () => {
+      this.el.blur();
+      onToggle();
+    });
+    parent.appendChild(this.el);
+  }
+
+  setMuted(muted: boolean): void {
+    this.el.innerHTML = muted
+      ? `${SPEAKER}<path d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`
+      : `${SPEAKER}<path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+    this.el.setAttribute('aria-label', muted ? 'Turn sound on' : 'Turn sound off');
+    this.el.title = muted ? 'Sound off (M)' : 'Sound on (M)';
   }
 }
 

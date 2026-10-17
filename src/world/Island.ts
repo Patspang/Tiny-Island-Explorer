@@ -143,6 +143,23 @@ export class Island implements GameWorld {
     return h < 1.5 ? 'sand' : 'grass';
   }
 
+  get habitats() {
+    const coast = Array.from({ length: 6 }, (_, i) => {
+      const theta = (i / 6) * Math.PI * 2 + 0.4;
+      const r = coastRadius(theta) * 1.08;
+      return { x: Math.cos(theta) * r, y: 0, z: Math.sin(theta) * r };
+    });
+    return { meadows: this.environment.meadows, woods: this.environment.woods, coast };
+  }
+
+  lampPosition(): THREE.Vector3 {
+    return this.lighthouse.lampPosition();
+  }
+
+  coastProximity(x: number, z: number): number {
+    return THREE.MathUtils.smoothstep(coastDistance(x, z), 0.55, 0.95);
+  }
+
   foliageAt(x: number, y: number, z: number): number {
     return this.environment.foliageAt(x, y, z);
   }
