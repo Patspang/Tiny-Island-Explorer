@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GROUP, groups, type PhysicsWorld } from '../physics/PhysicsWorld';
 import { Environment } from './Environment';
 import type { QuestGoal, QuestPieceSpot } from '../quest/Quest';
-import { coastDistance, coastRadius, heightAt, LIGHTHOUSE, normalAt, PATH_POINTS, QUEST_SPOTS, SPAWN } from './IslandShape';
+import { coastDistance, coastRadius, heightAt, LIGHTHOUSE, normalAt, PATH_POINTS, pathMask, QUEST_SPOTS, SPAWN } from './IslandShape';
 import { Islet } from './Islet';
 import { Lighthouse } from './Lighthouse';
 import { Ocean } from './Ocean';
@@ -15,6 +15,8 @@ const BOUNDARY_D = 1.07;
 const BOUNDARY_SEGMENTS = 96;
 
 /** The playable island: terrain, sea, lighthouse and scenery, plus their colliders. */
+const surfaceNormal = { x: 0, y: 1, z: 0 };
+
 export class Island implements GameWorld {
   readonly group = new THREE.Group();
   readonly spawn: THREE.Vector3;
@@ -132,9 +134,22 @@ export class Island implements GameWorld {
     return normalAt(x, z, this.n).y > 0.8;
   }
 
-  update(dt: number, time: number, camera: THREE.Camera): void {
+  surfaceAt(x: number, z: number): 'grass' | 'sand' | 'path' | 'rock' {
+    const h = heightAt(x, z);
+    // Steep ground shows rock (Terrain.surfaceColor exposes it from about this slope).
+    if (normalAt(x, z, surfaceNormal).y < 0.72) return 'rock';
+    if (pathMask(x, z) > 0.5) return 'path';
+    // Matches the terrain's sand band (Terrain.surfaceColor).
+    return h < 1.5 ? 'sand' : 'grass';
+  }
+
+  foliageAt(x: number, y: number, z: number): number {
+    return this.environment.foliageAt(x, y, z);
+  }
+
+  update(dt: number, time: number, camera: THREE.Camera, player?: THREE.Vector3): void {
     this.ocean.update(time, camera);
-    this.environment.update(time, camera);
+    this.environment.update(time, camera, player);
     this.lighthouse.update(dt, time);
   }
 

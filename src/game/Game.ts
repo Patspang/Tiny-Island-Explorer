@@ -3,7 +3,8 @@ import { CAMERA, PHYSICS, PLAYER, RENDER } from '../config';
 import { FollowCamera } from '../camera/FollowCamera';
 import { GROUP, groups, PhysicsWorld } from '../physics/PhysicsWorld';
 import { PlayerController, PLAYER_CAPSULE_CENTER } from '../player/PlayerController';
-import { PlayerVisual } from '../player/PlayerVisual';
+import { GroundEffects } from '../player/GroundEffects';
+import { PlayerVisual, type PlayerVisualState } from '../player/PlayerVisual';
 import { Quest } from '../quest/Quest';
 import { Atmosphere } from '../world/Atmosphere';
 import type { GameWorld } from '../world/World';
@@ -34,6 +35,8 @@ export class Game {
   readonly followCamera: FollowCamera;
   readonly player: PlayerController;
   readonly visual: PlayerVisual;
+  private readonly effects = new GroundEffects();
+  private readonly drawingSize = new THREE.Vector2();
   readonly world: GameWorld;
   readonly atmosphere: Atmosphere;
   readonly quest: Quest | null;
@@ -81,7 +84,7 @@ export class Game {
     this.followCamera = new FollowCamera(this.renderer.domElement, physics, (x, z) => this.world.groundHeight(x, z));
     this.player = new PlayerController(physics, this.world.spawn, (x, y, z) => this.world.isSafeSpot(x, y, z));
     this.visual = new PlayerVisual();
-    this.scene.add(this.visual.root, this.visual.shadowMesh);
+    this.scene.add(this.visual.root, this.visual.shadowMesh, this.effects.points);
 
     const layout = this.world.quest;
     this.quest = layout
@@ -226,24 +229,23 @@ export class Game {
     }
 
     const groundY = this.groundBelow(p.position);
-    this.visual.update(
-      frameDt,
-      {
-        feet: this.renderFeet,
-        velocity: p.actualVelocity,
-        grounded: p.grounded,
-        landedImpact: this.pendingImpact,
-        justJumped: this.pendingJump,
-        snap,
-      },
-      groundY,
-    );
+    const visualState: PlayerVisualState = {
+      feet: this.renderFeet,
+      velocity: p.actualVelocity,
+      grounded: p.grounded,
+      landedImpact: this.pendingImpact,
+      justJumped: this.pendingJump,
+      snap,
+    };
+    this.visual.update(frameDt, visualState, groundY);
+    this.renderer.getDrawingBufferSize(this.drawingSize);
+    this.effects.update(frameDt, visualState, this.world, this.followCamera.camera, this.drawingSize.y);
     this.pendingImpact = 0;
     this.pendingJump = false;
 
     this.updateQuestPresentation(frameDt);
     this.atmosphere.update(this.renderFeet, this.followCamera.camera.position, this.renderTime);
-    this.world.update(frameDt, this.renderTime, this.followCamera.camera);
+    this.world.update(frameDt, this.renderTime, this.followCamera.camera, this.renderFeet);
     this.renderer.render(this.scene, this.followCamera.camera);
   }
 
@@ -333,6 +335,7 @@ export class Game {
     this.followCamera.dispose();
     this.player.dispose();
     this.visual.dispose();
+    this.effects.dispose();
     this.world.dispose();
     this.quest?.dispose();
     this.atmosphere.dispose();

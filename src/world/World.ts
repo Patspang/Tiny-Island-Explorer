@@ -32,6 +32,11 @@ export interface GameWorld {
   groundHeight(x: number, z: number): number;
   /** Whether a grounded position is a good place to respawn after falling. */
   isSafeSpot(x: number, feetY: number, z: number): boolean;
-  update(dt: number, time: number, camera: THREE.Camera): void;
+  /** Where a point sits on the ground, for footstep effects. */
+  surfaceAt?(x: number, z: number): 'grass' | 'sand' | 'path' | 'rock';
+  /** How deep a point is inside foliage the player can walk through (0..1), for leaf effects. */
+  foliageAt?(x: number, y: number, z: number): number;
+  /** `player` is the rendered feet position; plants bend away from it. */
+  update(dt: number, time: number, camera: THREE.Camera, player?: THREE.Vector3): void;
   dispose(): void;
 }

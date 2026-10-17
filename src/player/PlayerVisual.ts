@@ -7,6 +7,14 @@ function wrapAngle(a: number): number {
   return Math.atan2(Math.sin(a), Math.cos(a));
 }
 
+// Body proportions (metres). Hip height = thigh + shin + ankle-to-sole, so the boots meet the
+// ground; the head is scaled up in the constructor.
+const THIGH = 0.29;
+const SHIN = 0.27;
+const HIP_Y = 0.02 + THIGH + SHIN + 0.13;
+const UPPER_ARM = 0.22;
+const FOREARM = 0.2;
+
 const COLORS = {
   skin: '#f0bf98',
   skinShade: '#e4a882',
@@ -181,6 +189,8 @@ export class PlayerVisual {
   private readonly arms: Arm[] = [];
   private readonly shadow: THREE.Mesh;
   private readonly materials: THREE.Material[] = [];
+  /** World-space feet height, for the stylised ground gradient (see `stylize`). */
+  private readonly feetY = { value: 0 };
   private readonly geometries: THREE.BufferGeometry[] = [];
 
   private facing = Math.PI;
@@ -204,12 +214,14 @@ export class PlayerVisual {
   constructor() {
     const std = (color: string, roughness = 0.7, extra: THREE.MeshStandardMaterialParameters = {}) => {
       const m = new THREE.MeshStandardMaterial({ color, roughness, metalness: 0, ...extra });
+      stylize(m, this.feetY);
       this.materials.push(m);
       return m;
     };
     const cloth = (color: string, roughness = 0.85) => {
       // Sheen gives fabric a soft, velvety edge highlight.
       const m = new THREE.MeshPhysicalMaterial({ color, roughness, sheen: 0.6, sheenRoughness: 0.8, sheenColor: new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.4) });
+      stylize(m, this.feetY);
       this.materials.push(m);
       return m;
     };
@@ -259,31 +271,35 @@ export class PlayerVisual {
 
     this.root.add(this.body);
     this.body.add(this.hips);
-    this.hips.position.y = 0.82;
+    this.hips.position.y = HIP_Y;
 
     // --- Legs: thigh (in shorts) -> knee -> shin -> sock -> boot.
-    const shortsLegGeo = geo(limb(0.092, 0.084, 0.22));
-    const thighGeo = geo(limb(0.07, 0.064, 0.36));
-    const shinGeo = geo(limb(0.064, 0.05, 0.36));
-    const sockGeo = geo(new THREE.CylinderGeometry(0.058, 0.055, 0.09, 18));
-    const cuffGeo = geo(new THREE.TorusGeometry(0.058, 0.014, 8, 20));
+    // Upper and lower segments share the joint radius and overlap past the pivot, so knees bend
+    // smoothly instead of showing a doll-like seam.
+    const shortsLegGeo = geo(limb(0.1, 0.092, THIGH - 0.02));
+    const thighGeo = geo(limb(0.08, 0.068, THIGH + 0.07));
+    const shinGeo = geo(limb(0.068, 0.056, SHIN + 0.1));
+    const sockGeo = geo(new THREE.CylinderGeometry(0.064, 0.06, 0.1, 18));
+    const cuffGeo = geo(new THREE.TorusGeometry(0.064, 0.016, 8, 20));
     const bootGeo = geo(bootGeometry());
     const soleGeo = geo(roundedBox(0.105, 0.025, 0.24, 0.03, 0.008));
     for (const side of [1, -1]) {
       const hip = new THREE.Group();
-      hip.position.set(0.095 * side, -0.02, 0);
+      hip.position.set(0.1 * side, -0.02, 0);
       this.hips.add(hip);
-      part(shortsLegGeo, shorts, hip, 0, -0.02, 0);
-      part(thighGeo, skin, hip, 0, -0.04, 0);
+      part(shortsLegGeo, shorts, hip, 0, -0.01, 0);
+      part(thighGeo, skin, hip, 0, -0.02, 0);
       const knee = new THREE.Group();
-      knee.position.y = -0.38;
+      knee.position.y = -THIGH;
       hip.add(knee);
-      part(shinGeo, skin, knee, 0, 0, 0.005);
-      part(sockGeo, sock, knee, 0, -0.27, 0.003);
-      const sockCuff = part(cuffGeo, sock, knee, 0, -0.23, 0.003);
+      part(shinGeo, skin, knee, 0, 0.05, 0.004);
+      part(sockGeo, sock, knee, 0, -SHIN + 0.08, 0.003);
+      const sockCuff = part(cuffGeo, sock, knee, 0, -SHIN + 0.13, 0.003);
       sockCuff.rotation.x = Math.PI / 2;
       const ankle = new THREE.Group();
-      ankle.position.y = -0.33;
+      ankle.position.y = -SHIN;
+      // Chunky cartoon boots read at gameplay distance.
+      ankle.scale.setScalar(1.25);
       knee.add(ankle);
       part(bootGeo, boot, ankle, 0, -0.005, 0);
       part(soleGeo, sole, ankle, 0, -0.095, 0.045);
@@ -296,7 +312,7 @@ export class PlayerVisual {
     }
 
     // --- Shorts and belt around the hips.
-    part(geo(lathe([[0.0, -0.1], [0.15, -0.09], [0.172, -0.02], [0.168, 0.06], [0.16, 0.12]], 32)), shorts, this.hips, 0, 0, 0).scale.z = 0.8;
+    part(geo(lathe([[0.0, -0.11], [0.165, -0.1], [0.185, -0.02], [0.176, 0.06], [0.165, 0.12]], 32)), shorts, this.hips, 0, 0, 0).scale.z = 0.82;
     const beltRing = part(geo(new THREE.TorusGeometry(0.163, 0.022, 10, 36)), belt, this.hips, 0, 0.1, 0);
     beltRing.rotation.x = Math.PI / 2;
     beltRing.scale.y = 0.8;
@@ -340,26 +356,28 @@ export class PlayerVisual {
     }
 
     // --- Arms: sleeve -> upper arm -> elbow -> forearm -> hand.
-    const sleeveGeo = geo(limb(0.07, 0.066, 0.13));
-    const cuffArmGeo = geo(new THREE.TorusGeometry(0.064, 0.016, 8, 20));
-    const upperArmGeo = geo(limb(0.052, 0.046, 0.27));
-    const foreArmGeo = geo(limb(0.046, 0.038, 0.24));
+    const sleeveGeo = geo(limb(0.074, 0.07, 0.13));
+    const cuffArmGeo = geo(new THREE.TorusGeometry(0.068, 0.017, 8, 20));
+    const upperArmGeo = geo(limb(0.056, 0.048, UPPER_ARM + 0.05));
+    const foreArmGeo = geo(limb(0.048, 0.042, FOREARM + 0.06));
     const palmGeo = geo(new THREE.SphereGeometry(0.048, 16, 12));
     const thumbGeo = geo(limb(0.016, 0.014, 0.05, 8));
     for (const side of [1, -1]) {
       const shoulder = new THREE.Group();
-      shoulder.position.set(0.19 * side, 0.34, 0);
+      shoulder.position.set(0.2 * side, 0.34, 0);
       this.torso.add(shoulder);
       part(sleeveGeo, shirt, shoulder, 0, 0.02, 0);
       const cuff = part(cuffArmGeo, shirtDark, shoulder, 0, -0.1, 0);
       cuff.rotation.x = Math.PI / 2;
       part(upperArmGeo, skin, shoulder, 0, -0.01, 0);
       const elbow = new THREE.Group();
-      elbow.position.y = -0.26;
+      elbow.position.y = -UPPER_ARM;
       shoulder.add(elbow);
-      part(foreArmGeo, skin, elbow, 0, 0, 0);
+      part(foreArmGeo, skin, elbow, 0, 0.04, 0);
       const wrist = new THREE.Group();
-      wrist.position.y = -0.24;
+      wrist.position.y = -FOREARM;
+      // Slightly oversized hands, as in most stylised characters.
+      wrist.scale.setScalar(1.3);
       elbow.add(wrist);
       const palm = part(palmGeo, skin, wrist, 0, -0.035, 0.005);
       palm.scale.set(0.75, 1.1, 0.95);
@@ -394,7 +412,9 @@ export class PlayerVisual {
     }
 
     // --- Head: slightly oversized, friendly proportions.
-    this.head.position.y = 0.13;
+    this.head.position.y = 0.12;
+    // Oversized head (about a quarter of body height) keeps the face readable from the camera.
+    this.head.scale.setScalar(1.32);
     this.neck.add(this.head);
     const skull = part(geo(new THREE.SphereGeometry(0.17, 40, 30)), skin, this.head, 0, 0.12, 0);
     skull.scale.set(0.97, 1.02, 0.98);
@@ -407,8 +427,9 @@ export class PlayerVisual {
       ear.scale.set(0.45, 1, 0.75);
       // Eyes: white, iris, catchlight; grouped so they can blink.
       const eye = new THREE.Group();
-      eye.position.set(0.058 * side, 0.135, 0.145);
+      eye.position.set(0.06 * side, 0.128, 0.146);
       eye.rotation.y = 0.25 * side;
+      eye.scale.setScalar(1.3);
       this.head.add(eye);
       const white = part(geo(new THREE.SphereGeometry(0.026, 16, 12)), eyeWhite, eye, 0, 0, 0, false);
       white.scale.set(1, 1.15, 0.55);
@@ -444,23 +465,30 @@ export class PlayerVisual {
 
     // Hair: back volume, sideburns and a fringe of tufts peeking out under the hat.
     part(geo(hairShell()), hair, this.head, 0, 0.12, 0);
-    const tuftGeo = geo(limb(0.03, 0.006, 0.11, 10));
-    const tufts: Array<[number, number, number, number, number]> = [
-      [-0.09, 0.22, 0.13, 0.9, 0.5],
-      [-0.035, 0.24, 0.15, 1.0, 0.15],
-      [0.025, 0.24, 0.15, 1.05, -0.15],
-      [0.08, 0.22, 0.135, 0.9, -0.45],
-      [0.15, 0.15, 0.06, 0.4, -0.9],
-      [-0.15, 0.15, 0.06, 0.4, 0.9],
+    // Fringe: a few broad, flattened locks swept to one side, plus sideburn tufts. Broad shapes
+    // read as hair at a distance; thin tufts read as dark blobs.
+    const lockGeo = geo(new THREE.SphereGeometry(0.05, 16, 10));
+    const locks: Array<[number, number, number, number, number]> = [
+      [-0.07, 0.235, 0.12, 0.35, 0.5],
+      [0.0, 0.245, 0.13, 0.3, 0.3],
+      [0.07, 0.235, 0.12, 0.35, 0.1],
     ];
-    for (const [x, y, z, rx, rz] of tufts) {
-      const t = part(tuftGeo, hair, this.head, x, y, z);
-      t.rotation.set(rx, 0, rz);
+    for (const [x, y, z, rx, rz] of locks) {
+      const l = part(lockGeo, hair, this.head, x, y, z, false);
+      l.scale.set(1.25, 0.5, 0.75);
+      l.rotation.set(rx, 0, rz);
+    }
+    const tuftGeo = geo(limb(0.03, 0.006, 0.11, 10));
+    for (const side of [1, -1]) {
+      const t = part(tuftGeo, hair, this.head, 0.15 * side, 0.15, 0.06);
+      t.rotation.set(0.4, 0, -0.9 * side);
     }
 
     // Explorer hat: domed crown, curled brim, band; it bounces a little when moving.
     this.hat.position.set(0, 0.26, -0.01);
     this.hat.rotation.x = -0.08;
+    // The head is scaled up; keep the brim from turning into a sombrero.
+    this.hat.scale.setScalar(0.86);
     this.head.add(this.hat);
     part(geo(lathe([[0.0, 0.13], [0.09, 0.12], [0.135, 0.07], [0.15, 0.0], [0.152, -0.02]], 32)), hatMat, this.hat);
     part(geo(lathe([[0.15, 0.0], [0.2, -0.01], [0.25, -0.012], [0.275, 0.005], [0.28, 0.02]], 40, 24)), hatMat, this.hat);
@@ -484,6 +512,7 @@ export class PlayerVisual {
   update(dt: number, s: PlayerVisualState, groundY: number | null): void {
     this.time += dt;
     this.root.position.copy(s.feet);
+    this.feetY.value = s.feet.y;
 
     const speed = Math.hypot(s.velocity.x, s.velocity.z);
     const speedN = Math.min(1, speed / PLAYER.runSpeed);
@@ -522,7 +551,7 @@ export class PlayerVisual {
 
     // Pelvis: bob twice per stride, sway side to side, lean into speed.
     const bob = Math.abs(Math.cos(this.phase)) * (0.035 + 0.04 * rb) * mb;
-    this.hips.position.y = 0.82 + bob - (0.025 + 0.03 * rb) * mb;
+    this.hips.position.y = HIP_Y + bob - (0.025 + 0.03 * rb) * mb;
     this.hips.position.x = Math.sin(this.phase) * 0.018 * mb * (1 - rb);
     this.lean += ((0.06 + 0.2 * rb) * speedN * (1 - air) - this.lean) * damp(8, dt);
     this.hips.rotation.set(this.lean * 0.35, Math.sin(this.phase) * (0.1 + 0.06 * rb) * mb, this.bank + Math.cos(this.phase) * 0.04 * mb);
@@ -579,7 +608,7 @@ export class PlayerVisual {
     }
     this.blink = Math.max(0, this.blink - dt);
     const lid = this.blink > 0 ? 0.12 : 1;
-    for (const e of this.eyes) e.scale.y = lid;
+    for (const e of this.eyes) e.scale.y = lid * 1.3;
 
     // Secondary motion: hat and backpack lag behind vertical motion; scarf tails trail.
     const bobVel = dt > 0 ? (bob - this.lastBobY) / dt : 0;
@@ -617,6 +646,35 @@ export class PlayerVisual {
     }
     for (const g of this.geometries) g.dispose();
   }
+}
+
+/**
+ * Painted-film shading to match the foliage: the character darkens softly toward the feet (like
+ * the baked canopy gradients and ground occlusion) and gets a warm rim light, so the silhouette
+ * separates from the greens behind it.
+ */
+function stylize(m: THREE.MeshStandardMaterial, feetY: { value: number }): void {
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.uFeetY = feetY;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vWorldY;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvWorldY = ( modelMatrix * vec4( transformed, 1.0 ) ).y;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uFeetY;\nvarying float vWorldY;')
+      .replace(
+        '#include <color_fragment>',
+        '#include <color_fragment>\ndiffuseColor.rgb *= mix( 0.74, 1.0, smoothstep( 0.0, 0.85, vWorldY - uFeetY ) );',
+      )
+      .replace(
+        '#include <opaque_fragment>',
+        /* glsl */ `{
+          float facing = saturate( dot( normal, normalize( vViewPosition ) ) );
+          outgoingLight += vec3( 1.0, 0.9, 0.72 ) * pow( 1.0 - facing, 3.0 ) * 0.28 * diffuseColor.rgb;
+        }
+        #include <opaque_fragment>`,
+      );
+  };
+  m.customProgramCacheKey = () => 'player-stylized';
 }
 
 /**
