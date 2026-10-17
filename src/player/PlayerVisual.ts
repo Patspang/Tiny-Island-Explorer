@@ -7,22 +7,22 @@ function wrapAngle(a: number): number {
   return Math.atan2(Math.sin(a), Math.cos(a));
 }
 
-// Body proportions (metres). Hip height = thigh + shin + ankle-to-sole, so the boots meet the
-// ground; the head is scaled up in the constructor.
-const THIGH = 0.29;
-const SHIN = 0.27;
-const HIP_Y = 0.02 + THIGH + SHIN + 0.13;
-const UPPER_ARM = 0.22;
-const FOREARM = 0.2;
+// Body proportions (metres): close to a real teenager, with a slightly enlarged head for
+// readability. Hip height = thigh + shin + ankle-to-sole, so the boots meet the ground.
+const THIGH = 0.33;
+const SHIN = 0.32;
+const HIP_Y = 0.02 + THIGH + SHIN + 0.12;
+const UPPER_ARM = 0.25;
+const FOREARM = 0.23;
 
 const COLORS = {
-  skin: '#f0bf98',
+  skin: '#e8b892',
   skinShade: '#e4a882',
   blush: '#f09a8a',
   hair: '#5e3520',
   shirt: '#2f8f9d',
   shirtDark: '#24727e',
-  shorts: '#c9a56d',
+  trousers: '#9a8558',
   sock: '#efe6d2',
   boot: '#7a4a2c',
   sole: '#3b2a1f',
@@ -246,10 +246,10 @@ export class PlayerVisual {
       return mesh;
     };
 
-    const skin = std(COLORS.skin, 0.55);
+    const skin = std(COLORS.skin, 0.68);
     const shirt = cloth(COLORS.shirt);
     const shirtDark = cloth(COLORS.shirtDark);
-    const shorts = cloth(COLORS.shorts);
+    const trousers = cloth(COLORS.trousers);
     const sock = cloth(COLORS.sock, 0.9);
     const boot = std(COLORS.boot, 0.6);
     const sole = std(COLORS.sole, 0.8);
@@ -266,40 +266,38 @@ export class PlayerVisual {
     const eyeWhite = std(COLORS.eyeWhite, 0.25);
     const iris = std(COLORS.iris, 0.2);
     const catchlight = std('#ffffff', 0.2, { emissive: '#ffffff', emissiveIntensity: 0.8 });
-    const blush = std(COLORS.blush, 0.7, { transparent: true, opacity: 0.55 });
+    const blush = std(COLORS.blush, 0.7, { transparent: true, opacity: 0.18 });
     const mouth = std(COLORS.mouth, 0.6);
 
     this.root.add(this.body);
     this.body.add(this.hips);
     this.hips.position.y = HIP_Y;
 
-    // --- Legs: thigh (in shorts) -> knee -> shin -> sock -> boot.
-    // Upper and lower segments share the joint radius and overlap past the pivot, so knees bend
-    // smoothly instead of showing a doll-like seam.
-    const shortsLegGeo = geo(limb(0.1, 0.092, THIGH - 0.02));
-    const thighGeo = geo(limb(0.08, 0.068, THIGH + 0.07));
-    const shinGeo = geo(limb(0.068, 0.056, SHIN + 0.1));
-    const sockGeo = geo(new THREE.CylinderGeometry(0.064, 0.06, 0.1, 18));
-    const cuffGeo = geo(new THREE.TorusGeometry(0.064, 0.016, 8, 20));
+    // --- Legs: trouser thigh -> knee -> trouser shin tucked into a tall boot.
+    // Upper and lower segments share the joint radius and overlap past the pivot, and cloth covers
+    // the knee, so it bends without a doll-like seam.
+    const thighGeo = geo(limb(0.092, 0.076, THIGH + 0.07));
+    const shinGeo = geo(limb(0.076, 0.064, SHIN + 0.06));
+    const shaftGeo = geo(limb(0.07, 0.064, 0.17, 18));
+    const cuffGeo = geo(new THREE.TorusGeometry(0.069, 0.014, 8, 20));
     const bootGeo = geo(bootGeometry());
     const soleGeo = geo(roundedBox(0.105, 0.025, 0.24, 0.03, 0.008));
     for (const side of [1, -1]) {
       const hip = new THREE.Group();
       hip.position.set(0.1 * side, -0.02, 0);
       this.hips.add(hip);
-      part(shortsLegGeo, shorts, hip, 0, -0.01, 0);
-      part(thighGeo, skin, hip, 0, -0.02, 0);
+      part(thighGeo, trousers, hip, 0, 0, 0);
       const knee = new THREE.Group();
       knee.position.y = -THIGH;
       hip.add(knee);
-      part(shinGeo, skin, knee, 0, 0.05, 0.004);
-      part(sockGeo, sock, knee, 0, -SHIN + 0.08, 0.003);
-      const sockCuff = part(cuffGeo, sock, knee, 0, -SHIN + 0.13, 0.003);
-      sockCuff.rotation.x = Math.PI / 2;
+      part(shinGeo, trousers, knee, 0, 0.05, 0.004);
+      // Boot shaft up the lower shin, with a turned-down leather cuff.
+      part(shaftGeo, boot, knee, 0, -SHIN + 0.17, 0.004);
+      const bootCuff = part(cuffGeo, boot, knee, 0, -SHIN + 0.16, 0.004);
+      bootCuff.rotation.x = Math.PI / 2;
       const ankle = new THREE.Group();
       ankle.position.y = -SHIN;
-      // Chunky cartoon boots read at gameplay distance.
-      ankle.scale.setScalar(1.25);
+      ankle.scale.setScalar(1.1);
       knee.add(ankle);
       part(bootGeo, boot, ankle, 0, -0.005, 0);
       part(soleGeo, sole, ankle, 0, -0.095, 0.045);
@@ -312,7 +310,7 @@ export class PlayerVisual {
     }
 
     // --- Shorts and belt around the hips.
-    part(geo(lathe([[0.0, -0.11], [0.165, -0.1], [0.185, -0.02], [0.176, 0.06], [0.165, 0.12]], 32)), shorts, this.hips, 0, 0, 0).scale.z = 0.82;
+    part(geo(lathe([[0.0, -0.11], [0.165, -0.1], [0.185, -0.02], [0.176, 0.06], [0.165, 0.12]], 32)), trousers, this.hips, 0, 0, 0).scale.z = 0.82;
     const beltRing = part(geo(new THREE.TorusGeometry(0.163, 0.022, 10, 36)), belt, this.hips, 0, 0.1, 0);
     beltRing.rotation.x = Math.PI / 2;
     beltRing.scale.y = 0.8;
@@ -356,28 +354,28 @@ export class PlayerVisual {
     }
 
     // --- Arms: sleeve -> upper arm -> elbow -> forearm -> hand.
-    const sleeveGeo = geo(limb(0.074, 0.07, 0.13));
-    const cuffArmGeo = geo(new THREE.TorusGeometry(0.068, 0.017, 8, 20));
-    const upperArmGeo = geo(limb(0.056, 0.048, UPPER_ARM + 0.05));
-    const foreArmGeo = geo(limb(0.048, 0.042, FOREARM + 0.06));
+    // Long sleeves rolled to mid-forearm: cloth covers the shoulder and elbow joints.
+    const sleeveGeo = geo(limb(0.066, 0.056, UPPER_ARM + 0.06));
+    const lowerSleeveGeo = geo(limb(0.056, 0.052, 0.12));
+    const cuffArmGeo = geo(new THREE.TorusGeometry(0.053, 0.018, 8, 20));
+    const foreArmGeo = geo(limb(0.044, 0.038, FOREARM - 0.04));
     const palmGeo = geo(new THREE.SphereGeometry(0.048, 16, 12));
     const thumbGeo = geo(limb(0.016, 0.014, 0.05, 8));
     for (const side of [1, -1]) {
       const shoulder = new THREE.Group();
       shoulder.position.set(0.2 * side, 0.34, 0);
       this.torso.add(shoulder);
-      part(sleeveGeo, shirt, shoulder, 0, 0.02, 0);
-      const cuff = part(cuffArmGeo, shirtDark, shoulder, 0, -0.1, 0);
-      cuff.rotation.x = Math.PI / 2;
-      part(upperArmGeo, skin, shoulder, 0, -0.01, 0);
+      part(sleeveGeo, shirt, shoulder, 0, 0.03, 0);
       const elbow = new THREE.Group();
       elbow.position.y = -UPPER_ARM;
       shoulder.add(elbow);
-      part(foreArmGeo, skin, elbow, 0, 0.04, 0);
+      part(lowerSleeveGeo, shirt, elbow, 0, 0.04, 0);
+      const cuff = part(cuffArmGeo, shirtDark, elbow, 0, -0.075, 0);
+      cuff.rotation.x = Math.PI / 2;
+      part(foreArmGeo, skin, elbow, 0, -0.05, 0);
       const wrist = new THREE.Group();
       wrist.position.y = -FOREARM;
-      // Slightly oversized hands, as in most stylised characters.
-      wrist.scale.setScalar(1.3);
+      wrist.scale.setScalar(1.08);
       elbow.add(wrist);
       const palm = part(palmGeo, skin, wrist, 0, -0.035, 0.005);
       palm.scale.set(0.75, 1.1, 0.95);
@@ -413,23 +411,23 @@ export class PlayerVisual {
 
     // --- Head: slightly oversized, friendly proportions.
     this.head.position.y = 0.12;
-    // Oversized head (about a quarter of body height) keeps the face readable from the camera.
-    this.head.scale.setScalar(1.32);
+    // Head a little larger than life so the face still reads from the follow camera.
+    this.head.scale.setScalar(1.12);
     this.neck.add(this.head);
     const skull = part(geo(new THREE.SphereGeometry(0.17, 40, 30)), skin, this.head, 0, 0.12, 0);
-    skull.scale.set(0.97, 1.02, 0.98);
+    // Slightly oval, taller than wide: a face rather than a ball.
+    skull.scale.set(0.93, 1.07, 0.97);
     const cheekGeo = geo(new THREE.SphereGeometry(0.085, 20, 16));
     for (const side of [1, -1]) {
       // Fuller cheeks and jaw.
       const cheek = part(cheekGeo, skin, this.head, 0.07 * side, 0.06, 0.06, false);
-      cheek.scale.set(0.9, 0.85, 0.8);
+      cheek.scale.set(0.72, 0.72, 0.62);
       const ear = part(geo(new THREE.SphereGeometry(0.035, 14, 10)), skin, this.head, 0.163 * side, 0.115, -0.005);
       ear.scale.set(0.45, 1, 0.75);
       // Eyes: white, iris, catchlight; grouped so they can blink.
       const eye = new THREE.Group();
       eye.position.set(0.06 * side, 0.128, 0.146);
       eye.rotation.y = 0.25 * side;
-      eye.scale.setScalar(1.3);
       this.head.add(eye);
       const white = part(geo(new THREE.SphereGeometry(0.026, 16, 12)), eyeWhite, eye, 0, 0, 0, false);
       white.scale.set(1, 1.15, 0.55);
@@ -452,7 +450,8 @@ export class PlayerVisual {
       b.scale.set(0.35, 0.2, 0.15);
     }
     const nose = part(geo(new THREE.SphereGeometry(0.022, 14, 10)), skin, this.head, 0, 0.095, 0.17, false);
-    nose.scale.set(0.9, 0.85, 0.9);
+    // A modelled nose (longer than wide) instead of a round button.
+    nose.scale.set(0.75, 1.15, 1.0);
     part(
       geo(taperedTube([new THREE.Vector3(-0.026, 0.004, 0), new THREE.Vector3(0, -0.006, 0.006), new THREE.Vector3(0.026, 0.004, 0)], 0.005, 0.005, 6, 10)),
       mouth,
@@ -488,7 +487,7 @@ export class PlayerVisual {
     this.hat.position.set(0, 0.26, -0.01);
     this.hat.rotation.x = -0.08;
     // The head is scaled up; keep the brim from turning into a sombrero.
-    this.hat.scale.setScalar(0.86);
+    this.hat.scale.setScalar(0.95);
     this.head.add(this.hat);
     part(geo(lathe([[0.0, 0.13], [0.09, 0.12], [0.135, 0.07], [0.15, 0.0], [0.152, -0.02]], 32)), hatMat, this.hat);
     part(geo(lathe([[0.15, 0.0], [0.2, -0.01], [0.25, -0.012], [0.275, 0.005], [0.28, 0.02]], 40, 24)), hatMat, this.hat);
@@ -608,7 +607,7 @@ export class PlayerVisual {
     }
     this.blink = Math.max(0, this.blink - dt);
     const lid = this.blink > 0 ? 0.12 : 1;
-    for (const e of this.eyes) e.scale.y = lid * 1.3;
+    for (const e of this.eyes) e.scale.y = lid;
 
     // Secondary motion: hat and backpack lag behind vertical motion; scarf tails trail.
     const bobVel = dt > 0 ? (bob - this.lastBobY) / dt : 0;
