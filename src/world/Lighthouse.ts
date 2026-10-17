@@ -342,6 +342,11 @@ export class Lighthouse {
     return d;
   }
 
+  /** World position of the lamp (finale sparkles). */
+  lampPosition(out = new THREE.Vector3()): THREE.Vector3 {
+    return this.lamp.getWorldPosition(out);
+  }
+
   /** 0 = dark (daytime, unlit), 1 = fully relit. */
   setLight(level: number): void {
     if (level === this.lightLevel) return;

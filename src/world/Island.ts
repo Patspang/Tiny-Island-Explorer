@@ -143,6 +143,10 @@ export class Island implements GameWorld {
     return h < 1.5 ? 'sand' : 'grass';
   }
 
+  lampPosition(): THREE.Vector3 {
+    return this.lighthouse.lampPosition();
+  }
+
   coastProximity(x: number, z: number): number {
     return THREE.MathUtils.smoothstep(coastDistance(x, z), 0.55, 0.95);
   }

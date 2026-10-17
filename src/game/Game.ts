@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { AudioEngine } from '../audio/AudioEngine';
+import { Sparkles } from '../fx/Sparkles';
 import { CAMERA, PHYSICS, PLAYER, RENDER } from '../config';
 import { FollowCamera } from '../camera/FollowCamera';
 import { GROUP, groups, PhysicsWorld } from '../physics/PhysicsWorld';
@@ -37,6 +38,7 @@ export class Game {
   readonly player: PlayerController;
   readonly visual: PlayerVisual;
   readonly audio = new AudioEngine();
+  private readonly sparkles = new Sparkles();
   private readonly effects = new GroundEffects({
     footstep: (surface, strength) => this.audio.footstep(surface, strength),
     jump: () => this.audio.jump(),
@@ -48,6 +50,7 @@ export class Game {
   readonly quest: Quest | null;
   onQuest: (e: QuestUiEvent) => void = () => {};
   private questDoneSent = false;
+  private readonly sparkled: boolean[] = [];
 
   state: GameState = 'title';
   onStateChange: (state: GameState) => void = () => {};
@@ -90,7 +93,7 @@ export class Game {
     this.followCamera = new FollowCamera(this.renderer.domElement, physics, (x, z) => this.world.groundHeight(x, z));
     this.player = new PlayerController(physics, this.world.spawn, (x, y, z) => this.world.isSafeSpot(x, y, z));
     this.visual = new PlayerVisual();
-    this.scene.add(this.visual.root, this.visual.shadowMesh, this.effects.group);
+    this.scene.add(this.visual.root, this.visual.shadowMesh, this.effects.group, this.sparkles.points);
 
     const layout = this.world.quest;
     this.quest = layout
@@ -98,6 +101,7 @@ export class Game {
           onCollect: (collected, total, label) => {
             this.world.setQuestProgress?.(collected, total);
             this.audio.collect(collected - 1, total);
+            this.burstNewlyCollected();
             this.onQuest({ type: 'collect', collected, total, label });
           },
           onHint: (label) => {
@@ -114,6 +118,8 @@ export class Game {
           },
           onFinaleStart: () => {
             this.audio.finale();
+            const lamp = this.world.lampPosition?.();
+            if (lamp) this.sparkles.shower(lamp);
             this.onQuest({ type: 'finaleStart' });
           },
         })
@@ -276,10 +282,28 @@ export class Game {
     this.renderer.render(this.scene, this.followCamera.camera);
   }
 
-  private updateQuestPresentation(dt: number): void {
+  /** Sparkle burst at whichever piece was just picked up. */
+  private burstNewlyCollected(): void {
     const q = this.quest;
     if (!q) return;
+    q.spots.forEach((spot, i) => {
+      if (q.isCollected(i) && !this.sparkled[i]) {
+        this.sparkled[i] = true;
+        this.sparkles.burst(spot.position);
+      }
+    });
+  }
+
+  private updateQuestPresentation(dt: number): void {
+    const q = this.quest;
+    this.renderer.getDrawingBufferSize(this.drawingSize);
+    this.sparkles.update(dt, this.followCamera.camera, this.drawingSize.y);
+    if (!q) return;
     q.update(dt, this.renderTime, this.followCamera.camera.position);
+    const cam = this.followCamera.camera.position;
+    q.spots.forEach((spot, i) => {
+      if (!q.isCollected(i) && spot.position.distanceToSquared(cam) < 60 * 60) this.sparkles.glint(spot.position, dt);
+    });
     this.world.setLighthouseLight?.(q.lightLevel);
     this.atmosphere.setDusk(q.duskLevel);
     this.world.setDusk?.(q.duskLevel, this.atmosphere.horizon);
@@ -364,6 +388,7 @@ export class Game {
     this.visual.dispose();
     this.effects.dispose();
     this.audio.dispose();
+    this.sparkles.dispose();
     this.world.dispose();
     this.quest?.dispose();
     this.atmosphere.dispose();
