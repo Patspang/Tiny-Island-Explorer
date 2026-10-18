@@ -13,7 +13,7 @@ export interface MapState {
 const LABELS: Partial<Record<MapLandmark['kind'], string>> = MAP.labels;
 
 /**
- * Captain Wren's map: a hand-drawn chart of the island, redrawn each time it opens so it shows
+ * Captain Zwartbaard's map: a hand-drawn chart of the island, redrawn each time it opens so it shows
  * where the player is and ticks off finished places. Plain 2D canvas; it reads plain data only.
  */
 export class MapView {

@@ -263,7 +263,7 @@ export function bellsLocal(lx: number, lz: number): { x: number; z: number } {
   return { x: BELLS.x + lx * c + lz * s, z: BELLS.z - lx * s + lz * c };
 }
 
-/** Wren's chest in the woodland clearing; the woods piece floats out of it toward the clearing. */
+/** Zwartbaard's chest in the woodland clearing; the woods piece floats out of it toward the clearing. */
 export const CHEST = { x: -28, z: 6.5, rotY: 0 } as const;
 
 /** The X from the map, on the north-east cliff top where the cliff piece is buried. */

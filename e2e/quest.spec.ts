@@ -149,7 +149,7 @@ test.describe('lighthouse quest', () => {
     expect((await questState(page)).collected).toBe(1);
   });
 
-  test("five golden shells open Wren's chest and free the woods piece", async ({ page }) => {
+  test("five golden shells open Zwartbaard's chest and free the woods piece", async ({ page }) => {
     const s = await sites(page);
     const woods = await piece(page, 'woods');
     // Walking up to where the piece will be does nothing while the chest is shut.

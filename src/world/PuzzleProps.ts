@@ -15,7 +15,7 @@ type SignIcon = 'bells' | 'shell' | 'stones';
 
 /**
  * The puzzle props of the lens quest: the singing bells and their plates, the music stone,
- * Wren's chest, the golden shells, the message in a bottle, the X on the cliff and the signs.
+ * Zwartbaard's chest, the golden shells, the message in a bottle, the X on the cliff and the signs.
  * Solid parts (frame posts, chest, sign posts) get colliders; everything else is walk-through.
  * Presentation only: animation reads the quest's PuzzleView and never writes to it.
  */
@@ -104,7 +104,7 @@ export class PuzzleProps {
     const noteTex = this.track(noteTexture());
     this.disc(listen.x, listen.z, 0.78, stone, this.mat({ map: noteTex, roughness: 0.6 }), 0.6);
 
-    // --- Wren's chest.
+    // --- Zwartbaard's chest.
     const chest = new THREE.Group();
     const chestY = heightAt(CHEST.x, CHEST.z);
     chest.position.set(CHEST.x, chestY - 0.04, CHEST.z);

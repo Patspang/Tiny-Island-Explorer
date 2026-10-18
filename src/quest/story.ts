@@ -19,12 +19,12 @@ export const LETTER = {
     'Ik zit vast op het grote eiland aan de overkant van de zee. Daarom heb ik jouw hulp nodig. Vanavond komen de vissersboten thuis. Zonder licht raken ze de weg kwijt.',
     'Ik heb aanwijzingen voor je achtergelaten: kijk goed naar mijn houten bordjes. Ik heb ook een kaart voor je getekend. Druk op K om hem te bekijken.',
   ],
-  signature: 'Dank je wel, dappere ontdekker! Kapitein Wren, de vuurtorenwachter',
+  signature: 'Dank je wel, dappere ontdekker! Kapitein Zwartbaard, de vuurtorenwachter',
   button: 'Laat de kaart zien',
 };
 
 export const MAP = {
-  title: 'De kaart van Kapitein Wren',
+  title: 'De kaart van Kapitein Zwartbaard',
   close: 'Verder ontdekken',
   you: 'Jij',
   north: 'N',
@@ -41,10 +41,10 @@ export const MAP = {
 /** Signs and notes the player walks up to. */
 export const NOTES = {
   bells:
-    'Bordje van Wren: De Zingende Klokken. Ga op de steen met de muzieknoot staan en luister naar hun liedje. Zing het daarna terug door op de gekleurde stenen te stappen!',
-  chest: 'Bordje van Wren: Mijn schatkist! Het slot heeft vijf gaatjes in de vorm van een schelp. Zoek vijf gouden schelpen op de stranden.',
-  stones: 'Bordje van Wren: Spring van steen naar steen. Plons je in de zee? Geen probleem, probeer het gewoon nog een keer!',
-  crates: 'Briefje van Wren: Met die kisten kun je mooi omhoog klimmen. Lukt het jou om op het dak van het hutje te springen?',
+    'Bordje van Zwartbaard: De Zingende Klokken. Ga op de steen met de muzieknoot staan en luister naar hun liedje. Zing het daarna terug door op de gekleurde stenen te stappen!',
+  chest: 'Bordje van Zwartbaard: Mijn schatkist! Het slot heeft vijf gaatjes in de vorm van een schelp. Zoek vijf gouden schelpen op de stranden.',
+  stones: 'Bordje van Zwartbaard: Spring van steen naar steen. Plons je in de zee? Geen probleem, probeer het gewoon nog een keer!',
+  crates: 'Briefje van Zwartbaard: Met die kisten kun je mooi omhoog klimmen. Lukt het jou om op het dak van het hutje te springen?',
 } as const;
 export type NoteId = keyof typeof NOTES;
 
@@ -62,8 +62,8 @@ export const TOASTS = {
   songPlaying: 'Luister goed naar de klokken…',
   bellsSolved: 'De klokken hebben hun liedje gezongen! Boven op de oude ruïne glinstert een lensstuk. Spring maar omhoog!',
   shell: (found: number, total: number) =>
-    found < total ? `Gouden schelp! ${found} / ${total}` : `Gouden schelp! Je hebt ze alle ${total}. Ga naar de schatkist van Wren!`,
-  chestOpen: 'Klik! De schatkist van Wren gaat open en er zweeft een lensstuk uit!',
+    found < total ? `Gouden schelp! ${found} / ${total}` : `Gouden schelp! Je hebt ze alle ${total}. Ga naar de schatkist van Zwartbaard!`,
+  chestOpen: 'Klik! De schatkist van Zwartbaard gaat open en er zweeft een lensstuk uit!',
   dig: 'Je hebt gegraven waar het kruis was… een schat! Een lensstuk!',
 };
 
@@ -71,7 +71,7 @@ export const FINALE = {
   eyebrow: 'Opdracht voltooid',
   title: 'Het licht is terug',
   subtitle:
-    'De vuurtoren schijnt weer en de vissersboten volgen het licht veilig naar huis. Kapitein Wren is heel trots op je! Het eiland is helemaal van jou om te ontdekken.',
+    'De vuurtoren schijnt weer en de vissersboten volgen het licht veilig naar huis. Kapitein Zwartbaard is heel trots op je! Het eiland is helemaal van jou om te ontdekken.',
   button: 'Verder ontdekken',
 };
 
@@ -126,7 +126,7 @@ export function journalLines(q: QuestView): JournalLine[] {
   const woods = piece('woods');
   if (woods) {
     const text = woods.collected
-      ? 'De schatkist van Wren'
+      ? 'De schatkist van Zwartbaard'
       : q.chestOpen
         ? 'Pak het lensstuk uit de schatkist'
         : `Zoek gouden schelpen voor de kist (${q.shellsFound} / ${q.shellsTotal})`;
