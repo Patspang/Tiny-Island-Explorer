@@ -18,8 +18,11 @@ export const LETTER = {
     'Schrik maar niet van mijn naam! Met mijn grote zwarte baard zie ik er misschien uit als een piraat, maar ik ben de vuurtorenwachter. De enige schat die ik bewaak, is het licht.',
     'De storm heeft de glazen lens van mijn vuurtoren in vijf stukken gebroken. De wind heeft ze over het hele eiland geblazen!',
     'Ik zit vast op het grote eiland aan de overkant van de zee. Daarom heb ik jouw hulp nodig. Vanavond komen de vissersboten thuis. Zonder licht raken ze de weg kwijt.',
-    'Ik heb aanwijzingen voor je achtergelaten: kijk goed naar mijn houten bordjes. Ik heb ook een kaart voor je getekend. Druk op K om hem te bekijken.',
+    'Ik heb aanwijzingen voor je achtergelaten: kijk goed naar mijn houten bordjes. Ik heb ook een kaart voor je getekend.',
   ],
+  /** Added to the last paragraph: how to open the map on this device. */
+  mapHint: 'Druk op K om hem te bekijken.',
+  mapHintTouch: 'Tik op de knop Kaart om hem te bekijken.',
   signature: 'Dank je wel, dappere ontdekker! Kapitein Zwartbaard, de vuurtorenwachter',
   button: 'Laat de kaart zien',
 };
@@ -43,9 +46,6 @@ export const MAP = {
 export const NOTES = {
   bells:
     'Bordje van Zwartbaard: De Zingende Klokken. Ga op de steen met de muzieknoot staan en luister naar hun liedje. Zing het daarna terug door op de gekleurde stenen te stappen!',
-  chest: 'Bordje van Zwartbaard: Mijn schatkist! Het slot heeft vijf gaatjes in de vorm van een schelp. Zoek vijf gouden schelpen op de stranden.',
-  stones: 'Bordje van Zwartbaard: Spring van steen naar steen. Plons je in de zee? Geen probleem, probeer het gewoon nog een keer!',
-  crates: 'Briefje van Zwartbaard: Met die kisten kun je mooi omhoog klimmen. Lukt het jou om op het dak van het hutje te springen?',
 } as const;
 export type NoteId = keyof typeof NOTES;
 
@@ -125,35 +125,11 @@ export interface JournalLine {
   done: boolean;
 }
 
-/** The checklist in the corner: one line per lens piece, then the final task. */
+/** The goal in the corner: just what to do next, not where everything is. */
 export function journalLines(q: QuestView): JournalLine[] {
   if (!q.bottleRead) return [{ text: 'Bekijk het glimmende ding op het strand', done: false }];
-  const piece = (id: string) => q.pieces.find((p) => p.id === id);
-  const lines: JournalLine[] = [];
-  const ruin = piece('ruin');
-  if (ruin) {
-    const text = ruin.collected
-      ? 'De zingende klokken'
-      : q.bellsSolved
-        ? 'Spring op de oude ruïne'
-        : 'Speel het liedje op de zingende klokken';
-    lines.push({ text, done: ruin.collected });
-  }
-  const woods = piece('woods');
-  if (woods) {
-    const text = woods.collected
-      ? 'De schatkist van Zwartbaard'
-      : q.chestOpen
-        ? 'Pak het lensstuk uit de schatkist'
-        : `Zoek gouden schelpen voor de kist (${q.shellsFound} / ${q.shellsTotal})`;
-    lines.push({ text, done: woods.collected });
-  }
-  const cliff = piece('cliff');
-  if (cliff) lines.push({ text: cliff.collected ? 'Het kruis op de kaart' : 'Zoek het kruis van de kaart', done: cliff.collected });
-  const islet = piece('islet');
-  if (islet) lines.push({ text: 'Spring naar de rots in zee', done: islet.collected });
-  const roof = piece('roof');
-  if (roof) lines.push({ text: 'Klim op het dak van het hutje', done: roof.collected });
-  if (q.state !== 'collecting') lines.push({ text: 'Breng de lens naar de deur van de vuurtoren', done: q.state === 'done' });
+  const allFound = q.state !== 'collecting';
+  const lines: JournalLine[] = [{ text: 'Zoek de vijf lensstukken van de vuurtoren', done: allFound }];
+  if (allFound) lines.push({ text: 'Breng de lens naar de deur van de vuurtoren', done: q.state === 'done' });
   return lines;
 }

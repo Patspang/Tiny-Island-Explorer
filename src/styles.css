@@ -405,6 +405,8 @@ kbd {
 .map-canvas {
   display: block;
   width: min(560px, 100%, calc(100vh - 170px));
+  /* dvh follows the visible area as mobile browser bars come and go. */
+  width: min(560px, 100%, calc(100dvh - 210px));
   aspect-ratio: 1;
   margin: 0 auto 14px;
   border-radius: 12px;
@@ -613,10 +615,9 @@ body.touch .hint {
   }
 }
 
-/* Narrow screens (a phone held upright): messages go below the quest card, not over it. */
+/* Narrow screens: slightly smaller messages (QuestHud moves them below the goal card). */
 @media (max-width: 600px) {
   .quest-toast {
-    top: 150px;
     font-size: 14px;
   }
 }
@@ -648,5 +649,49 @@ body.touch .hint {
   .controls {
     margin-top: 12px;
     padding-top: 10px;
+  }
+}
+
+/* --- Phones held upright: story screens must fit between the notch and Safari's bottom bar. */
+@media (max-width: 600px) {
+  .overlay {
+    padding: max(12px, env(safe-area-inset-top)) 12px calc(env(safe-area-inset-bottom) + 40px);
+  }
+  .panel {
+    max-height: 100%;
+    overflow-y: auto;
+  }
+  .panel.paper {
+    padding: 18px 18px 14px;
+    font-size: 15px;
+    line-height: 1.38;
+  }
+  .panel.paper h2 {
+    margin-bottom: 8px;
+    font-size: 21px;
+  }
+  .panel.paper .eyebrow {
+    font-size: 11px;
+  }
+  .panel.paper p {
+    margin-bottom: 8px;
+  }
+  .panel.paper .signature {
+    margin: 10px 0 12px;
+  }
+  /* If a very small phone still needs to scroll, the button stays in reach. */
+  .panel.paper button {
+    position: sticky;
+    bottom: 0;
+  }
+  .panel.map {
+    padding: 12px 12px 14px;
+  }
+}
+
+/* The sound button would sit on top of the letter or map on a small screen. */
+@media (max-width: 600px) {
+  body:has(.letter:not(.hidden), .map-view:not(.hidden)) .sound-toggle {
+    visibility: hidden;
   }
 }

@@ -11,12 +11,10 @@ const BELL_SIZES = [0.5, 0.4, 0.31];
 const FRAME_HALF_WIDTH = 2.7;
 const BEAM_HEIGHT = 2.85;
 
-type SignIcon = 'bells' | 'shell' | 'stones';
-
 /**
  * The puzzle props of the lens quest: the singing bells and their plates, the music stone,
- * Zwartbaard's chest, the golden shells, the message in a bottle, the X on the cliff and the signs.
- * Solid parts (frame posts, chest, sign posts) get colliders; everything else is walk-through.
+ * Zwartbaard's chest, the golden shells, the message in a bottle, the X on the cliff and the bells sign.
+ * Solid parts (frame posts, chest, sign post) get colliders; everything else is walk-through.
  * Presentation only: animation reads the quest's PuzzleView and never writes to it.
  */
 export class PuzzleProps {
@@ -209,29 +207,21 @@ export class PuzzleProps {
     heap.scale.set(0.8, 0.35, 0.6);
     heap.position.set(0.9, -0.03, 0.2);
 
-    // --- Signposts.
-    const signs: Array<[{ x: number; z: number }, SignIcon, { x: number; z: number }]> = [
-      [SIGNS.bells, 'bells', bellsLocal(0, 7)],
-      [SIGNS.chest, 'shell', { x: -24, z: 11 }],
-      [SIGNS.stones, 'stones', { x: 0, z: 0 }],
-    ];
-    const signPostGeo = this.track(new THREE.CylinderGeometry(0.07, 0.08, 1.7, 7));
-    const boardGeo = this.track(new THREE.BoxGeometry(1.0, 0.56, 0.07));
-    const faceGeo = this.track(new THREE.PlaneGeometry(0.9, 0.48));
-    for (const [at, icon, face] of signs) {
-      const sign = new THREE.Group();
-      sign.position.set(at.x, heightAt(at.x, at.z), at.z);
-      sign.rotation.y = Math.atan2(face.x - at.x, face.z - at.z) + 0.25;
-      this.group.add(sign);
-      this.add(new THREE.Mesh(signPostGeo, darkWood), sign).position.y = 0.6;
-      const board = this.add(new THREE.Mesh(boardGeo, wood), sign);
-      board.position.y = 1.3;
-      const tex = this.track(signTexture(icon));
-      const front = this.add(new THREE.Mesh(faceGeo, this.mat({ map: tex, roughness: 0.85, transparent: true })), sign);
-      front.position.set(0, 1.3, 0.04);
-      front.castShadow = false;
-      post(at.x, at.z, 0.1, 1.8, 'sign');
-    }
+    // --- The signpost by the bells (the only puzzle that needs explaining).
+    const at = SIGNS.bells;
+    const face = bellsLocal(0, 7);
+    const sign = new THREE.Group();
+    sign.position.set(at.x, heightAt(at.x, at.z), at.z);
+    sign.rotation.y = Math.atan2(face.x - at.x, face.z - at.z) + 0.25;
+    this.group.add(sign);
+    this.add(new THREE.Mesh(this.track(new THREE.CylinderGeometry(0.07, 0.08, 1.7, 7)), darkWood), sign).position.y = 0.6;
+    const board = this.add(new THREE.Mesh(this.track(new THREE.BoxGeometry(1.0, 0.56, 0.07)), wood), sign);
+    board.position.y = 1.3;
+    const tex = this.track(signTexture());
+    const front = this.add(new THREE.Mesh(this.track(new THREE.PlaneGeometry(0.9, 0.48)), this.mat({ map: tex, roughness: 0.85, transparent: true })), sign);
+    front.position.set(0, 1.3, 0.04);
+    front.castShadow = false;
+    post(at.x, at.z, 0.1, 1.8, 'sign');
   }
 
   private mat(params: THREE.MeshStandardMaterialParameters): THREE.MeshStandardMaterial {
@@ -436,8 +426,8 @@ function drawNote(ctx: CanvasRenderingContext2D, cx: number, cy: number, h: numb
   ctx.fill();
 }
 
-/** Painted picture on a sign: young players read pictures before words. */
-function signTexture(icon: SignIcon): THREE.CanvasTexture {
+/** Painted picture on the bells sign (young players read pictures before words): three bells and a note. */
+function signTexture(): THREE.CanvasTexture {
   return canvasTexture(256, (ctx, s) => {
     ctx.fillStyle = 'rgba(250, 240, 214, 0.92)';
     ctx.beginPath();
@@ -447,60 +437,20 @@ function signTexture(icon: SignIcon): THREE.CanvasTexture {
     ctx.lineWidth = s * 0.02;
     ctx.stroke();
     const cy = s / 2;
-    if (icon === 'bells') {
-      BELL_COLORS.forEach((c, i) => {
-        const x = s * (0.25 + i * 0.25);
-        const r = s * (0.1 - i * 0.017);
-        ctx.fillStyle = '#c99a3e';
-        ctx.beginPath();
-        ctx.moveTo(x - r * 0.5, cy - r);
-        ctx.quadraticCurveTo(x, cy - r * 1.5, x + r * 0.5, cy - r);
-        ctx.lineTo(x + r, cy + r * 0.6);
-        ctx.lineTo(x - r, cy + r * 0.6);
-        ctx.closePath();
-        ctx.fill();
-        ctx.fillStyle = c;
-        ctx.fillRect(x - r * 0.85, cy + r * 0.2, r * 1.7, r * 0.25);
-      });
-      drawNote(ctx, s * 0.84, s * 0.33, s * 0.16, '#3c4a55');
-    } else if (icon === 'shell') {
-      ctx.fillStyle = '#e8b931';
-      ctx.strokeStyle = '#8a5a00';
-      ctx.lineWidth = s * 0.012;
+    BELL_COLORS.forEach((c, i) => {
+      const x = s * (0.25 + i * 0.25);
+      const r = s * (0.1 - i * 0.017);
+      ctx.fillStyle = '#c99a3e';
       ctx.beginPath();
-      ctx.moveTo(s * 0.5, cy + s * 0.2);
-      ctx.arc(s * 0.5, cy + s * 0.2, s * 0.3, -Math.PI * 0.85, -Math.PI * 0.15);
+      ctx.moveTo(x - r * 0.5, cy - r);
+      ctx.quadraticCurveTo(x, cy - r * 1.5, x + r * 0.5, cy - r);
+      ctx.lineTo(x + r, cy + r * 0.6);
+      ctx.lineTo(x - r, cy + r * 0.6);
       ctx.closePath();
       ctx.fill();
-      ctx.stroke();
-      for (let k = 1; k < 7; k++) {
-        const a = -Math.PI * (0.85 - k * 0.1);
-        ctx.beginPath();
-        ctx.moveTo(s * 0.5, cy + s * 0.2);
-        ctx.lineTo(s * 0.5 + Math.cos(a) * s * 0.3, cy + s * 0.2 + Math.sin(a) * s * 0.3);
-        ctx.stroke();
-      }
-      ctx.fillStyle = '#3c4a55';
-      ctx.font = `bold ${Math.round(s * 0.12)}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText('× 5', s * 0.82, cy + s * 0.05);
-    } else {
-      ctx.fillStyle = '#5aa9c9';
-      ctx.fillRect(s * 0.08, cy + s * 0.08, s * 0.84, s * 0.14);
-      ctx.fillStyle = '#8f877a';
-      for (let i = 0; i < 4; i++) {
-        const x = s * (0.18 + i * 0.21);
-        const w = s * 0.07;
-        const top = cy + s * 0.04 - i * s * 0.05;
-        ctx.fillRect(x - w, top, w * 2, cy + s * 0.2 - top);
-      }
-      ctx.strokeStyle = '#3c4a55';
-      ctx.lineWidth = s * 0.015;
-      ctx.setLineDash([s * 0.025, s * 0.02]);
-      ctx.beginPath();
-      ctx.moveTo(s * 0.18, cy - s * 0.02);
-      for (let i = 1; i < 4; i++) ctx.quadraticCurveTo(s * (0.18 + (i - 0.5) * 0.21), cy - s * 0.2 - i * s * 0.05, s * (0.18 + i * 0.21), cy - s * 0.02 - i * s * 0.05);
-      ctx.stroke();
-    }
+      ctx.fillStyle = c;
+      ctx.fillRect(x - r * 0.85, cy + r * 0.2, r * 1.7, r * 0.25);
+    });
+    drawNote(ctx, s * 0.84, s * 0.33, s * 0.16, '#3c4a55');
   });
 }

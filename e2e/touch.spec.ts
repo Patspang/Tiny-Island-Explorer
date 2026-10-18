@@ -99,4 +99,36 @@ test.describe('touch controls', () => {
     // Pinching must not also have spun the camera around.
     expect(Math.abs(zoomed.camera.yaw - startYaw)).toBeLessThan(0.01);
   });
+
+  // An iPhone held upright, minus Safari's bars, and a small iPhone SE.
+  for (const [w, h] of [[390, 664], [375, 560]] as const) {
+    test(`the letter and its button fit on a ${w}×${h} phone screen`, async ({ page }) => {
+      await page.setViewportSize({ width: w, height: h });
+      await startGame(page, 'touch');
+      const bottle = (await page.evaluate(() => window.__game!.questSites()!.bottle));
+      await page.evaluate(([x, y, z]) => window.__game!.teleport(x, y + 0.1, z), [bottle.x, bottle.y, bottle.z]);
+      const button = page.locator('.letter button.continue');
+      await expect(button).toBeVisible();
+      await expect(button).toBeInViewport({ ratio: 1 });
+      await expect(page.locator('.letter .panel')).toContainText('Tik op de knop Kaart');
+      await expect(page.locator('.sound-toggle')).toBeHidden();
+      await button.click();
+      await expect(page.locator('.map-view button.continue')).toBeInViewport({ ratio: 1 });
+    });
+  }
+
+  test('messages never cover the goal card on an upright phone', async ({ page }) => {
+    await page.setViewportSize({ width: 430, height: 760 });
+    await startGame(page, 'touch');
+    const shell = (await page.evaluate(() => window.__game!.questSites()!.shells[0]));
+    await page.evaluate(([x, y, z]) => {
+      window.__game!.teleport(x, y + 0.1, z);
+      window.__game!.simulate(0.3, {});
+    }, [shell.x, shell.y, shell.z]);
+    const toast = page.locator('.quest-toast');
+    await expect(toast).toContainText('Gouden schelp');
+    const card = (await page.locator('.quest-hud').boundingBox())!;
+    const box = (await toast.boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(card.y + card.height);
+  });
 });

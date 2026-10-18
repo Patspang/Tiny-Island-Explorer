@@ -213,11 +213,22 @@ export class QuestHud {
         return li;
       }),
     );
+    this.placeToast();
+  }
+
+  /** Messages sit top-centre, but drop below the goal card wherever the two would overlap. */
+  private placeToast(): void {
+    this.toast.style.top = '';
+    if (this.el.classList.contains('hidden')) return;
+    const card = this.el.getBoundingClientRect();
+    const toast = this.toast.getBoundingClientRect();
+    if (toast.left < card.right + 8 && toast.top < card.bottom + 8) this.toast.style.top = `${card.bottom + 10}px`;
   }
 
   message(text: string, ms = 3600): void {
     this.toast.textContent = text;
     this.toast.classList.remove('hidden');
+    this.placeToast();
     window.clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => this.toast.classList.add('hidden'), ms);
   }
@@ -239,11 +250,12 @@ export class LetterScreen {
     const title = document.createElement('h2');
     title.textContent = LETTER.title;
     panel.append(eyebrow, title);
-    for (const text of LETTER.paragraphs) {
+    LETTER.paragraphs.forEach((text, i) => {
       const p = document.createElement('p');
-      p.textContent = text;
+      const last = i === LETTER.paragraphs.length - 1;
+      p.textContent = last ? `${text} ${isTouchDevice() ? LETTER.mapHintTouch : LETTER.mapHint}` : text;
       panel.appendChild(p);
-    }
+    });
     const sign = document.createElement('p');
     sign.className = 'signature';
     sign.textContent = LETTER.signature;
