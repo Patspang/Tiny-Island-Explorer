@@ -1,18 +1,8 @@
 /** Start screen, pause menu, story screens and the quest HUD. Plain DOM; styling lives in styles.css. */
 
-import { FINALE, LETTER, TITLE, type JournalLine } from '../quest/story';
+import { FINALE, LETTER, TITLE, UI, type JournalLine } from '../quest/story';
 
-const CONTROLS: ReadonlyArray<[string, string]> = [
-  ['W A S D / Arrows', 'Move'],
-  ['Shift', 'Run'],
-  ['Space', 'Jump'],
-  ['Drag mouse', 'Look around'],
-  ['Mouse wheel', 'Zoom'],
-  ['J', 'Map'],
-  ['R', 'Back to the beach'],
-  ['M', 'Sound on / off'],
-  ['Esc', 'Pause'],
-];
+const CONTROLS = UI.controls;
 
 function controlsList(): HTMLElement {
   const dl = document.createElement('dl');
@@ -41,9 +31,9 @@ export class StartScreen {
     this.el.innerHTML = `
       <div class="panel">
         <p class="eyebrow">${TITLE.eyebrow}</p>
-        <h1>Tiny Island Explorer</h1>
+        <h1>${TITLE.name}</h1>
         <p class="subtitle">${TITLE.subtitle}</p>
-        <button class="play" type="button" disabled>Loading island…</button>
+        <button class="play" type="button" disabled>${UI.loading}</button>
       </div>`;
     this.el.querySelector('.panel')!.appendChild(controlsList());
     this.button = this.el.querySelector('button.play')!;
@@ -56,12 +46,12 @@ export class StartScreen {
 
   setReady(): void {
     this.button.disabled = false;
-    this.button.textContent = 'Play';
+    this.button.textContent = UI.play;
     this.button.focus();
   }
 
   setError(message: string): void {
-    this.button.textContent = 'Could not start';
+    this.button.textContent = UI.startFailed;
     const p = document.createElement('p');
     p.className = 'error';
     p.textContent = message;
@@ -81,8 +71,8 @@ export class PauseMenu {
     this.el.className = 'overlay pause-menu hidden';
     this.el.innerHTML = `
       <div class="panel compact">
-        <h2>Paused</h2>
-        <button class="resume" type="button">Resume</button>
+        <h2>${UI.paused}</h2>
+        <button class="resume" type="button">${UI.resume}</button>
       </div>`;
     this.el.querySelector('.panel')!.appendChild(controlsList());
     const button = this.el.querySelector<HTMLButtonElement>('button.resume')!;
@@ -106,7 +96,7 @@ export class Hint {
   constructor(parent: HTMLElement) {
     this.el = document.createElement('div');
     this.el.className = 'hint hidden';
-    this.el.textContent = 'J for the map · Esc to pause · R to return to the beach · M for sound';
+    this.el.textContent = UI.cornerHint;
     parent.appendChild(this.el);
   }
 
@@ -143,8 +133,8 @@ export class SoundToggle {
     this.el.innerHTML = muted
       ? `${SPEAKER}<path d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`
       : `${SPEAKER}<path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
-    this.el.setAttribute('aria-label', muted ? 'Turn sound on' : 'Turn sound off');
-    this.el.title = muted ? 'Sound off (M)' : 'Sound on (M)';
+    this.el.setAttribute('aria-label', muted ? UI.turnSoundOn : UI.turnSoundOff);
+    this.el.title = muted ? UI.soundOff : UI.soundOn;
   }
 }
 
@@ -176,7 +166,7 @@ export class QuestHud {
     const map = document.createElement('button');
     map.type = 'button';
     map.className = 'map-button';
-    map.textContent = 'Map (J)';
+    map.textContent = UI.mapButton;
     map.addEventListener('click', () => {
       map.blur();
       onMap();
@@ -199,11 +189,11 @@ export class QuestHud {
 
   setProgress(collected: number, total: number): void {
     this.dots.forEach((d, i) => d.classList.toggle('found', i < collected));
-    this.label.textContent = collected >= total ? 'Lens restored — to the lighthouse door!' : `Lens pieces ${collected} / ${total}`;
+    this.label.textContent = collected >= total ? UI.lensRestored : UI.lensCount(collected, total);
   }
 
   setDone(): void {
-    this.label.textContent = 'The lighthouse is lit';
+    this.label.textContent = UI.lighthouseLit;
   }
 
   /** The to-do list under the counter; finished tasks stay, ticked off. */

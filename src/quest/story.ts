@@ -1,68 +1,107 @@
-// Every word the player reads during the lighthouse quest, in one place so the story can be
-// edited without touching game code. Written for young readers: short sentences, plain words.
+// Every word the player reads, in one place so the story can be edited without touching game
+// code. The game is in Dutch, written for young readers: short sentences, plain words.
 
 import type { QuestView } from './Quest';
 
 export const TITLE = {
-  eyebrow: 'A small island adventure',
+  name: 'Klein Eiland Ontdekker',
+  eyebrow: 'Een avontuur op een klein eiland',
   subtitle:
-    'Last night a big storm broke the lighthouse lamp. Tonight the fishing boats need its light to find their way home. Can you help?',
+    'Vannacht heeft een grote storm de lamp van de vuurtoren kapotgemaakt. Vanavond hebben de vissersboten het licht nodig om de weg naar huis te vinden. Help jij mee?',
 };
 
 /** The message in the bottle on the spawn beach. */
 export const LETTER = {
-  eyebrow: 'A message in a bottle',
-  title: 'Dear Explorer,',
+  eyebrow: 'Een briefje in een fles',
+  title: 'Beste ontdekker,',
   paragraphs: [
-    'The storm smashed the glass lens of my lighthouse into five pieces, and the wind blew them all over the island!',
-    'I am stuck on the big island across the sea, so I need your help. The fishing boats come home tonight, and without the light they will get lost.',
-    'I hid some clues for you: look for my wooden signs. I also drew you a map. Press J to look at it any time.',
+    'De storm heeft de glazen lens van mijn vuurtoren in vijf stukken gebroken. De wind heeft ze over het hele eiland geblazen!',
+    'Ik zit vast op het grote eiland aan de overkant van de zee. Daarom heb ik jouw hulp nodig. Vanavond komen de vissersboten thuis. Zonder licht raken ze de weg kwijt.',
+    'Ik heb aanwijzingen voor je achtergelaten: kijk goed naar mijn houten bordjes. Ik heb ook een kaart voor je getekend. Druk op K om hem te bekijken.',
   ],
-  signature: 'Thank you, brave explorer! Captain Wren, the lighthouse keeper',
-  button: 'Show me the map',
+  signature: 'Dank je wel, dappere ontdekker! Kapitein Wren, de vuurtorenwachter',
+  button: 'Laat de kaart zien',
 };
 
 export const MAP = {
-  title: "Captain Wren's map",
-  close: 'Back to exploring',
-  you: 'You',
+  title: 'De kaart van Kapitein Wren',
+  close: 'Verder ontdekken',
+  you: 'Jij',
+  north: 'N',
+  labels: {
+    lighthouse: 'Vuurtoren',
+    bells: 'Klokken',
+    chest: 'Schatkist',
+    ruin: 'Ruïne',
+    stones: 'Zeerots',
+    hut: 'Hutje',
+  },
 };
 
 /** Signs and notes the player walks up to. */
 export const NOTES = {
   bells:
-    "Wren's sign: The Singing Bells. Stand on the stone with the music note to hear their song. Then step on the coloured stones to sing it back!",
-  chest: "Wren's sign: My treasure chest! The lock has five shell-shaped holes. Find five golden shells on the beaches.",
-  stones: "Wren's sign: Jump from stone to stone. If you splash into the sea, just try again!",
-  crates: "Wren's note: Those crates make good stairs. Can you jump up onto the hut roof?",
+    'Bordje van Wren: De Zingende Klokken. Ga op de steen met de muzieknoot staan en luister naar hun liedje. Zing het daarna terug door op de gekleurde stenen te stappen!',
+  chest: 'Bordje van Wren: Mijn schatkist! Het slot heeft vijf gaatjes in de vorm van een schelp. Zoek vijf gouden schelpen op de stranden.',
+  stones: 'Bordje van Wren: Spring van steen naar steen. Plons je in de zee? Geen probleem, probeer het gewoon nog een keer!',
+  crates: 'Briefje van Wren: Met die kisten kun je mooi omhoog klimmen. Lukt het jou om op het dak van het hutje te springen?',
 } as const;
 export type NoteId = keyof typeof NOTES;
 
 export const TOASTS = {
-  start: 'Something shiny is lying in the sand. Go and take a look!',
-  startAfterBottle: 'Find the five lost pieces of the lighthouse lens. Press J for the map.',
-  pieceFound: (left: number) => `Lens piece found! ${left} to go.`,
-  lensWhole: 'The lens is whole again! Bring it to the lighthouse door.',
-  hint: 'A beam of light rises somewhere on the island…',
+  start: 'Er ligt iets glimmends in het zand. Ga eens kijken!',
+  startAfterBottle: 'Zoek de vijf verloren stukken van de vuurtorenlens. Druk op K voor de kaart.',
+  pieceFound: (left: number) => `Lensstuk gevonden! Nog ${left} te gaan.`,
+  lensWhole: 'De lens is weer heel! Breng hem naar de deur van de vuurtoren.',
+  hint: 'Ergens op het eiland schijnt een straal licht omhoog…',
   doorLocked: (missing: number) =>
-    `The lens frame by the door is empty. ${missing} piece${missing === 1 ? '' : 's'} still missing.`,
-  finaleStart: 'The lighthouse flickers to life…',
-  bellRight: 'Ding! That is the right bell.',
-  bellWrong: 'Oops, that is not the song. Listen again on the music stone.',
-  songPlaying: 'Listen to the bells…',
-  bellsSolved: 'The bells sang their song! A lens piece is shining on top of the old ruin. Jump up!',
+    `Het lijstje naast de deur is nog leeg. Er ${missing === 1 ? 'mist nog 1 stuk' : `missen nog ${missing} stukken`}.`,
+  finaleStart: 'De vuurtoren begint te flikkeren…',
+  bellRight: 'Ding! Dat is de goede klok.',
+  bellWrong: 'Oeps, zo gaat het liedje niet. Luister nog eens op de steen met de muzieknoot.',
+  songPlaying: 'Luister goed naar de klokken…',
+  bellsSolved: 'De klokken hebben hun liedje gezongen! Boven op de oude ruïne glinstert een lensstuk. Spring maar omhoog!',
   shell: (found: number, total: number) =>
-    found < total ? `Golden shell! ${found} / ${total}` : `Golden shell! That's all ${total}. Go to Wren's chest!`,
-  chestOpen: "Click! Wren's chest swings open and a lens piece floats out!",
-  dig: 'You dug where the X was… treasure! A lens piece!',
+    found < total ? `Gouden schelp! ${found} / ${total}` : `Gouden schelp! Je hebt ze alle ${total}. Ga naar de schatkist van Wren!`,
+  chestOpen: 'Klik! De schatkist van Wren gaat open en er zweeft een lensstuk uit!',
+  dig: 'Je hebt gegraven waar het kruis was… een schat! Een lensstuk!',
 };
 
 export const FINALE = {
-  eyebrow: 'Quest complete',
-  title: 'The light is back',
+  eyebrow: 'Opdracht voltooid',
+  title: 'Het licht is terug',
   subtitle:
-    'The lighthouse shines again, and the fishing boats follow its light safely home. Captain Wren will be so proud of you! The island is yours to explore.',
-  button: 'Keep exploring',
+    'De vuurtoren schijnt weer en de vissersboten volgen het licht veilig naar huis. Kapitein Wren is heel trots op je! Het eiland is helemaal van jou om te ontdekken.',
+  button: 'Verder ontdekken',
+};
+
+/** Menus, buttons and the small labels around the game. */
+export const UI = {
+  loading: 'Eiland wordt geladen…',
+  play: 'Spelen',
+  startFailed: 'Starten lukte niet',
+  paused: 'Pauze',
+  resume: 'Verder spelen',
+  cornerHint: 'K voor de kaart · Esc voor pauze · R terug naar het strand · M voor geluid',
+  soundOn: 'Geluid aan (M)',
+  soundOff: 'Geluid uit (M)',
+  turnSoundOn: 'Geluid aanzetten',
+  turnSoundOff: 'Geluid uitzetten',
+  mapButton: 'Kaart (K)',
+  lensCount: (collected: number, total: number) => `Lensstukken ${collected} / ${total}`,
+  lensRestored: 'Lens compleet — naar de deur van de vuurtoren!',
+  lighthouseLit: 'De vuurtoren brandt weer',
+  controls: [
+    ['W A S D / Pijltjes', 'Lopen'],
+    ['Shift', 'Rennen'],
+    ['Spatie', 'Springen'],
+    ['Muis slepen', 'Rondkijken'],
+    ['Muiswiel', 'In- en uitzoomen'],
+    ['K', 'Kaart'],
+    ['R', 'Terug naar het strand'],
+    ['M', 'Geluid aan / uit'],
+    ['Esc', 'Pauze'],
+  ] as ReadonlyArray<[string, string]>,
 };
 
 export interface JournalLine {
@@ -72,33 +111,33 @@ export interface JournalLine {
 
 /** The checklist in the corner: one line per lens piece, then the final task. */
 export function journalLines(q: QuestView): JournalLine[] {
-  if (!q.bottleRead) return [{ text: 'Look at the shiny thing on the beach', done: false }];
+  if (!q.bottleRead) return [{ text: 'Bekijk het glimmende ding op het strand', done: false }];
   const piece = (id: string) => q.pieces.find((p) => p.id === id);
   const lines: JournalLine[] = [];
   const ruin = piece('ruin');
   if (ruin) {
     const text = ruin.collected
-      ? 'The singing bells'
+      ? 'De zingende klokken'
       : q.bellsSolved
-        ? 'Jump up onto the old ruin'
-        : 'Play the song on the singing bells';
+        ? 'Spring op de oude ruïne'
+        : 'Speel het liedje op de zingende klokken';
     lines.push({ text, done: ruin.collected });
   }
   const woods = piece('woods');
   if (woods) {
     const text = woods.collected
-      ? "Wren's treasure chest"
+      ? 'De schatkist van Wren'
       : q.chestOpen
-        ? "Take the piece from Wren's chest"
-        : `Find golden shells for the chest (${q.shellsFound} / ${q.shellsTotal})`;
+        ? 'Pak het lensstuk uit de schatkist'
+        : `Zoek gouden schelpen voor de kist (${q.shellsFound} / ${q.shellsTotal})`;
     lines.push({ text, done: woods.collected });
   }
   const cliff = piece('cliff');
-  if (cliff) lines.push({ text: cliff.collected ? 'X marks the spot' : 'Find the X from the map', done: cliff.collected });
+  if (cliff) lines.push({ text: cliff.collected ? 'Het kruis op de kaart' : 'Zoek het kruis van de kaart', done: cliff.collected });
   const islet = piece('islet');
-  if (islet) lines.push({ text: 'Hop out to the sea rock', done: islet.collected });
+  if (islet) lines.push({ text: 'Spring naar de rots in zee', done: islet.collected });
   const roof = piece('roof');
-  if (roof) lines.push({ text: "Climb onto the keeper's hut roof", done: roof.collected });
-  if (q.state !== 'collecting') lines.push({ text: 'Bring the lens to the lighthouse door', done: q.state === 'done' });
+  if (roof) lines.push({ text: 'Klim op het dak van het hutje', done: roof.collected });
+  if (q.state !== 'collecting') lines.push({ text: 'Breng de lens naar de deur van de vuurtoren', done: q.state === 'done' });
   return lines;
 }

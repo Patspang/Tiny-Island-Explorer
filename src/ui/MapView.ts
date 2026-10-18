@@ -10,14 +10,7 @@ export interface MapState {
   bottleRead: boolean;
 }
 
-const LABELS: Partial<Record<MapLandmark['kind'], string>> = {
-  lighthouse: 'Lighthouse',
-  bells: 'Bells',
-  chest: 'Chest',
-  ruin: 'Ruin',
-  stones: 'Sea rock',
-  hut: 'Hut',
-};
+const LABELS: Partial<Record<MapLandmark['kind'], string>> = MAP.labels;
 
 /**
  * Captain Wren's map: a hand-drawn chart of the island, redrawn each time it opens so it shows
@@ -220,7 +213,7 @@ export class MapView {
       ctx.fill();
     }
     ctx.font = 'bold 13px Georgia, serif';
-    ctx.fillText('N', cx, cy - 26);
+    ctx.fillText(MAP.north, cx, cy - 26);
 
     // A worn border.
     ctx.strokeStyle = '#8a6a44';

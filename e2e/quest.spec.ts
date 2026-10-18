@@ -85,7 +85,7 @@ test.describe('lighthouse quest', () => {
     const q = await questState(page);
     expect(q).toMatchObject({ state: 'collecting', collected: 0, total: 5, hint: null, bottleRead: false, shellsFound: 0 });
     await expect(page.locator('.quest-hud')).toBeVisible();
-    await expect(page.locator('.quest-label')).toHaveText('Lens pieces 0 / 5');
+    await expect(page.locator('.quest-label')).toHaveText('Lensstukken 0 / 5');
     await expect(page.locator('.quest-journal li')).toHaveCount(1);
     const all = await pieces(page);
     expect(all.map((p) => p.id).sort()).toEqual(['cliff', 'islet', 'roof', 'ruin', 'woods']);
@@ -108,12 +108,12 @@ test.describe('lighthouse quest', () => {
     await expect(page.locator('.letter')).toHaveClass(/hidden/);
     await expect(page.locator('.map-view')).not.toHaveClass(/hidden/);
     expect((await snapshot(page)).state).toBe('overlay');
-    await page.keyboard.press('KeyJ');
+    await page.keyboard.press('KeyK');
     await expect(page.locator('.map-view')).toHaveClass(/hidden/);
     expect((await snapshot(page)).state).toBe('playing');
     await expect(page.locator('.quest-journal li')).toHaveCount(5);
 
-    // J opens the map again while playing, Escape closes it.
+    // The old J key opens the map too while playing; Escape closes it.
     await page.keyboard.press('KeyJ');
     await expect(page.locator('.map-view')).not.toHaveClass(/hidden/);
     await page.keyboard.press('Escape');
@@ -129,7 +129,7 @@ test.describe('lighthouse quest', () => {
     // A wrong note first: nothing happens except a gentle "try again".
     const wrong = [0, 1, 2].find((b) => b !== s.bells.song[0])!;
     await standOn(page, s.bells.plates[wrong]);
-    await expect(page.locator('.quest-toast')).toContainText('not the song');
+    await expect(page.locator('.quest-toast')).toContainText('zo gaat het liedje niet');
     expect((await questState(page)).songProgress).toBe(0);
     // Listening stone, then the song itself.
     await standOn(page, s.bells.listen, 0.3);
@@ -161,7 +161,7 @@ test.describe('lighthouse quest', () => {
     await collectShells(page, s);
     const q = await questState(page);
     expect(q).toMatchObject({ shellsFound: 5, chestOpen: true });
-    await expect(page.locator('.quest-toast')).toContainText('chest');
+    await expect(page.locator('.quest-toast')).toContainText('schatkist');
     await waitSim(page, 1.2);
     await teleport(page, woods.x, ground + 0.1, woods.z + 3, 0);
     await holding(page, ['KeyW'], 1.2);
@@ -174,7 +174,7 @@ test.describe('lighthouse quest', () => {
     await standOn(page, s.dig, 1.5);
     expect((await questState(page)).dug).toBe(true);
     expect((await piece(page, 'cliff')).collected).toBe(true);
-    await expect(page.locator('.quest-label')).toHaveText('Lens pieces 1 / 5');
+    await expect(page.locator('.quest-label')).toHaveText('Lensstukken 1 / 5');
   });
 
   test('stepping stones lead out to the sea-rock piece', async ({ page }) => {
@@ -239,7 +239,7 @@ test.describe('lighthouse quest', () => {
     await page.evaluate(() => window.__game!.setHintDelay(1));
     await waitSim(page, 1.5);
     expect((await questState(page)).hint).toBe('bottle');
-    await expect(page.locator('.quest-toast')).toContainText('beam of light');
+    await expect(page.locator('.quest-toast')).toContainText('straal licht');
 
     // Reading the bottle is progress: that beam goes, and the next one points at a real task.
     const s = await sites(page);
@@ -258,7 +258,7 @@ test.describe('lighthouse quest', () => {
     const goal = (await page.evaluate(() => window.__game!.questGoal()))!;
     await teleport(page, goal.x, goal.y + 0.2, goal.z, 0);
     await waitSim(page, 0.3);
-    await expect(page.locator('.quest-toast')).toContainText('5 pieces still missing');
+    await expect(page.locator('.quest-toast')).toContainText('missen nog 5 stukken');
     expect((await questState(page)).state).toBe('collecting');
   });
 
@@ -275,7 +275,7 @@ test.describe('lighthouse quest', () => {
       await page.waitForFunction((b) => window.__game!.snapshot().quest!.collected > b, before);
     }
     expect((await questState(page)).state).toBe('complete');
-    await expect(page.locator('.quest-label')).toContainText('to the lighthouse door');
+    await expect(page.locator('.quest-label')).toContainText('naar de deur van de vuurtoren');
 
     // Near the lighthouse but not at the door: nothing happens yet.
     const goal = (await page.evaluate(() => window.__game!.questGoal()))!;
@@ -307,6 +307,6 @@ test.describe('lighthouse quest', () => {
     const after = await snapshot(page);
     expect(after.state).toBe('playing');
     expect(after.quest).toMatchObject({ state: 'done', lightLevel: 1, duskLevel: 1 });
-    await expect(page.locator('.quest-label')).toHaveText('The lighthouse is lit');
+    await expect(page.locator('.quest-label')).toHaveText('De vuurtoren brandt weer');
   });
 });

@@ -69,12 +69,15 @@ async function boot(): Promise<void> {
       g.resume();
       openMap();
     });
-    game.input.onAction('KeyJ', () => {
+    // K for "kaart"; J (the old key) still works.
+    const toggleMap = () => {
       if (map?.visible) {
         map.close();
         g.resume();
       } else openMap();
-    });
+    };
+    game.input.onAction('KeyK', toggleMap);
+    game.input.onAction('KeyJ', toggleMap);
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Escape' && map?.visible) {
         map.close();

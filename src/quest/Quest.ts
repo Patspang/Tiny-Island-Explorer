@@ -298,6 +298,15 @@ export class Quest implements QuestView, PuzzleView {
     }
 
     // --- Singing bells.
+    // The first visit plays the song once by itself. Checked before the plates, so a note the
+    // player steps on in the same moment is kept (it stops the song) instead of being wiped.
+    if (!this.songAutoplayed && !this.bellsSolved) {
+      const near = Math.hypot(player.x - p.bells.listen.x, player.z - p.bells.listen.z) < SONG_AUTOPLAY_DISTANCE;
+      if (near) {
+        this.songAutoplayed = true;
+        this.startSong(true);
+      }
+    }
     const plate = p.bells.plates.findIndex((at) => standingOn(at, PLATE_RADIUS));
     if (plate !== this.plateUnder) {
       this.plateUnder = plate;
@@ -306,13 +315,6 @@ export class Quest implements QuestView, PuzzleView {
     const onListen = standingOn(p.bells.listen, LISTEN_RADIUS);
     if (onListen && !this.onListenStone && !this.bellsSolved) this.startSong(false);
     this.onListenStone = onListen;
-    if (!this.songAutoplayed && !this.bellsSolved) {
-      const near = Math.hypot(player.x - p.bells.listen.x, player.z - p.bells.listen.z) < SONG_AUTOPLAY_DISTANCE;
-      if (near) {
-        this.songAutoplayed = true;
-        this.startSong(true);
-      }
-    }
     if (this.songNext >= 0) {
       const due = this.songStart + SONG_LEAD + this.songNext * NOTE_GAP;
       if (this.time >= due) {
