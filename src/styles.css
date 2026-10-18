@@ -20,6 +20,12 @@ body {
   height: 100%;
   overflow: hidden;
   background: #cfe6ef;
+  /* Phones and tablets: no page bounce, no text selection or long-press menus mid-game. */
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #app {
@@ -42,6 +48,8 @@ body {
 .overlay {
   position: absolute;
   inset: 0;
+  /* Story screens and menus cover the HUD (only the sound button stays above). */
+  z-index: 8;
   display: grid;
   place-items: center;
   padding: 16px;
@@ -419,10 +427,226 @@ kbd {
   background: rgba(255, 252, 244, 0.7);
   color: var(--ink-soft);
   cursor: pointer;
-  z-index: 5;
+  z-index: 9;
   transition: background 0.2s ease;
 }
 
 .sound-toggle:hover {
   background: rgba(255, 252, 244, 0.95);
+}
+
+/* --- Pause menu: second button -------------------------------------------------------- */
+
+button.secondary {
+  display: block;
+  margin: 14px auto 0;
+  appearance: none;
+  border: 2px solid var(--teal);
+  border-radius: 999px;
+  padding: 9px 22px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--teal);
+  background: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+}
+
+/* --- Touch devices (phones and tablets) ----------------------------------------------- */
+
+.touch-controls.hidden {
+  display: none;
+}
+
+.touch-stick-zone {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 45%;
+  height: 55%;
+  touch-action: none;
+  z-index: 3;
+}
+
+.touch-stick {
+  position: absolute;
+  width: 124px;
+  height: 124px;
+  margin: -62px 0 0 -62px;
+  border-radius: 50%;
+  background: rgba(255, 252, 244, 0.22);
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 6px 18px rgba(20, 40, 50, 0.2);
+  display: none;
+  pointer-events: none;
+}
+
+.touch-stick.active {
+  display: block;
+}
+
+.touch-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
+  border-radius: 50%;
+  background: rgba(255, 252, 244, 0.9);
+  box-shadow: 0 4px 12px rgba(20, 40, 50, 0.3);
+}
+
+/* A resting stick so players see where to put their thumb before touching. */
+.touch-stick-zone::after {
+  content: '';
+  position: absolute;
+  left: max(70px, calc(env(safe-area-inset-left) + 60px));
+  bottom: max(70px, calc(env(safe-area-inset-bottom) + 60px));
+  width: 96px;
+  height: 96px;
+  margin: 0 0 -48px -48px;
+  border-radius: 50%;
+  border: 2px dashed rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+}
+
+.touch-stick-zone:has(.touch-stick.active)::after {
+  display: none;
+}
+
+.touch-jump,
+.touch-pause {
+  position: absolute;
+  appearance: none;
+  border: none;
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  background: rgba(255, 252, 244, 0.78);
+  box-shadow: 0 6px 18px rgba(20, 40, 50, 0.25);
+  touch-action: none;
+  z-index: 4;
+}
+
+.touch-jump {
+  right: max(28px, calc(env(safe-area-inset-right) + 18px));
+  bottom: max(36px, calc(env(safe-area-inset-bottom) + 26px));
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+}
+
+.touch-jump.pressed {
+  transform: scale(0.92);
+  background: rgba(255, 236, 190, 0.95);
+}
+
+.touch-pause {
+  top: max(14px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+
+/* On touch devices the sound button moves next to pause, out of the jump thumb's way. */
+body.touch .sound-toggle {
+  top: max(14px, env(safe-area-inset-top));
+  right: calc(max(16px, env(safe-area-inset-right)) + 54px);
+  bottom: auto;
+  width: 44px;
+  height: 44px;
+}
+
+body.touch .quest-hud {
+  top: max(14px, env(safe-area-inset-top));
+  left: max(16px, env(safe-area-inset-left));
+  /* Leave room for the sound and pause buttons in the top-right corner. */
+  max-width: min(330px, calc(100% - 150px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+}
+
+body.touch .map-button {
+  white-space: nowrap;
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+body.touch .hint {
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: max(14px, env(safe-area-inset-bottom));
+  text-align: center;
+}
+
+.rotate-hint {
+  display: none;
+}
+
+/* Phone held upright: a gentle nudge to turn it; the game still works. */
+@media (orientation: portrait) and (max-width: 600px) {
+  body.touch .rotate-hint {
+    display: block;
+    position: absolute;
+    left: 50%;
+    bottom: 50%;
+    transform: translateX(-50%);
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(255, 252, 244, 0.8);
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+    animation: rotate-hint-fade 7s ease forwards;
+  }
+}
+
+@keyframes rotate-hint-fade {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+/* Narrow screens (a phone held upright): messages go below the quest card, not over it. */
+@media (max-width: 600px) {
+  .quest-toast {
+    top: 150px;
+    font-size: 14px;
+  }
+}
+
+/* Short screens (a phone on its side): smaller HUD and panels so the island stays visible. */
+@media (max-height: 500px) {
+  .quest-hud {
+    max-width: min(260px, 40vw);
+    padding: 6px 10px 7px;
+    font-size: 12px;
+  }
+  .quest-journal {
+    font-size: 11px;
+    line-height: 1.25;
+  }
+  .quest-toast {
+    top: 10px;
+    font-size: 13px;
+    max-width: min(420px, calc(100% - 140px));
+  }
+  .panel {
+    padding: 16px 18px;
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+  }
+  .panel.paper {
+    font-size: 15px;
+  }
+  .controls {
+    margin-top: 12px;
+    padding-top: 10px;
+  }
 }

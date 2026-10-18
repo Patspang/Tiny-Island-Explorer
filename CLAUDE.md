@@ -14,6 +14,8 @@ A third-person exploration game set on a small stylized island. This is a game, 
 
 **Sound and ambient effects (added after Stage 2):** all audio is synthesised with Web Audio in `src/audio` (no sample files): ambience (surf by coast distance, wind by height, birds/gulls by day, crickets at dusk), footsteps per surface, jump/land, bush rustle, quest cues; mute via M or the corner button (remembered in localStorage). Audio starts only after a user gesture. Ground/water particles live in `player/GroundEffects`.
 
+**Phones and tablets:** on touch devices (`(pointer: coarse)`, or `?touch` to force it) `ui/TouchControls` shows a floating thumb stick bottom-left (full push = run), a jump button bottom-right and a pause button top-right; dragging elsewhere turns the camera and two fingers pinch-zoom (`FollowCamera`). The stick and jump button feed `InputManager.setStick` / `setTouchJump` alongside the keyboard. The pause menu has "Terug naar het strand" (no R key on touch). Layout uses safe-area insets and shrinks the HUD on short screens. Tests: `e2e/touch.spec.ts`. Not verified on real devices by automation: iOS Safari audio start, real multi-touch, frame rate on phones.
+
 Not yet: saving progress, music, animated (rigged) character, inventory, NPCs, multiple islands. If a request implies one of these, say so and ask.
 
 ## Stack

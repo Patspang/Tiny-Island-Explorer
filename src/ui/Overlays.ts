@@ -1,13 +1,13 @@
 /** Start screen, pause menu, story screens and the quest HUD. Plain DOM; styling lives in styles.css. */
 
 import { FINALE, LETTER, TITLE, UI, type JournalLine } from '../quest/story';
+import { isTouchDevice } from './TouchControls';
 
-const CONTROLS = UI.controls;
 
 function controlsList(): HTMLElement {
   const dl = document.createElement('dl');
   dl.className = 'controls';
-  for (const [key, action] of CONTROLS) {
+  for (const [key, action] of isTouchDevice() ? UI.touchControls : UI.controls) {
     const dt = document.createElement('dt');
     for (const part of key.split(' / ')) {
       const kbd = document.createElement('kbd');
@@ -66,19 +66,26 @@ export class StartScreen {
 export class PauseMenu {
   readonly el: HTMLElement;
 
-  constructor(parent: HTMLElement, onResume: () => void) {
+  constructor(parent: HTMLElement, onResume: () => void, onBackToBeach: () => void) {
     this.el = document.createElement('div');
     this.el.className = 'overlay pause-menu hidden';
     this.el.innerHTML = `
       <div class="panel compact">
         <h2>${UI.paused}</h2>
         <button class="resume" type="button">${UI.resume}</button>
+        <button class="secondary back-to-beach" type="button">${UI.backToBeach}</button>
       </div>`;
     this.el.querySelector('.panel')!.appendChild(controlsList());
     const button = this.el.querySelector<HTMLButtonElement>('button.resume')!;
     button.addEventListener('click', () => {
       button.blur();
       onResume();
+    });
+    // Touch devices have no R key; useful on a keyboard too.
+    const beach = this.el.querySelector<HTMLButtonElement>('button.back-to-beach')!;
+    beach.addEventListener('click', () => {
+      beach.blur();
+      onBackToBeach();
     });
     parent.appendChild(this.el);
   }
@@ -96,7 +103,7 @@ export class Hint {
   constructor(parent: HTMLElement) {
     this.el = document.createElement('div');
     this.el.className = 'hint hidden';
-    this.el.textContent = UI.cornerHint;
+    this.el.textContent = isTouchDevice() ? UI.cornerHintTouch : UI.cornerHint;
     parent.appendChild(this.el);
   }
 
@@ -166,7 +173,7 @@ export class QuestHud {
     const map = document.createElement('button');
     map.type = 'button';
     map.className = 'map-button';
-    map.textContent = UI.mapButton;
+    map.textContent = isTouchDevice() ? UI.mapButtonTouch : UI.mapButton;
     map.addEventListener('click', () => {
       map.blur();
       onMap();

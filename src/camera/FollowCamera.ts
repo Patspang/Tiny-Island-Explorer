@@ -30,6 +30,9 @@ export class FollowCamera {
   private readonly focus = new THREE.Vector3();
   private readonly dir = new THREE.Vector3();
   private dragging = false;
+  /** Fingers currently on the canvas, for two-finger pinch zoom. */
+  private readonly touches = new Map<number, { x: number; y: number }>();
+  private pinchDistance = 0;
   private lastPointer = { x: 0, y: 0 };
   private activePointer: number | null = null;
   enabled = false;
@@ -135,12 +138,39 @@ export class FollowCamera {
 
   private onPointerDown = (e: PointerEvent) => {
     if (!this.enabled || (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 2)) return;
+    if (e.pointerType === 'touch') {
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.touches.size === 2) {
+        // A second finger turns the drag into a pinch.
+        this.dragging = false;
+        this.activePointer = null;
+        this.pinchDistance = this.touchSpread();
+        return;
+      }
+      if (this.touches.size > 2) return;
+    }
     this.dragging = true;
     this.activePointer = e.pointerId;
     this.lastPointer = { x: e.clientX, y: e.clientY };
   };
 
   private onPointerMove = (e: PointerEvent) => {
+    const finger = this.touches.get(e.pointerId);
+    if (finger) {
+      finger.x = e.clientX;
+      finger.y = e.clientY;
+      if (this.touches.size >= 2 && this.pinchDistance > 0) {
+        const d = this.touchSpread();
+        // Fingers apart = closer, together = further away.
+        this.targetDistance = THREE.MathUtils.clamp(
+          (this.targetDistance * this.pinchDistance) / Math.max(d, 1),
+          CAMERA.minDistance,
+          CAMERA.maxDistance,
+        );
+        this.pinchDistance = d;
+        return;
+      }
+    }
     if (!this.dragging || e.pointerId !== this.activePointer) return;
     const dx = e.clientX - this.lastPointer.x;
     const dy = e.clientY - this.lastPointer.y;
@@ -153,7 +183,14 @@ export class FollowCamera {
     );
   };
 
+  private touchSpread(): number {
+    const [a, b] = [...this.touches.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+
   private onPointerUp = (e: PointerEvent) => {
+    this.touches.delete(e.pointerId);
+    if (this.touches.size < 2) this.pinchDistance = 0;
     if (e.pointerId === this.activePointer) {
       this.dragging = false;
       this.activePointer = null;
@@ -175,6 +212,8 @@ export class FollowCamera {
   /** Stop any drag in progress (focus loss, pause). */
   cancelDrag(): void {
     this.dragging = false;
+    this.touches.clear();
+    this.pinchDistance = 0;
     this.activePointer = null;
   }
 
