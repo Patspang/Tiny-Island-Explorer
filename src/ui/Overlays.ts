@@ -239,11 +239,12 @@ export class LetterScreen {
     const title = document.createElement('h2');
     title.textContent = LETTER.title;
     panel.append(eyebrow, title);
-    for (const text of LETTER.paragraphs) {
+    LETTER.paragraphs.forEach((text, i) => {
       const p = document.createElement('p');
-      p.textContent = text;
+      const last = i === LETTER.paragraphs.length - 1;
+      p.textContent = last ? `${text} ${isTouchDevice() ? LETTER.mapHintTouch : LETTER.mapHint}` : text;
       panel.appendChild(p);
-    }
+    });
     const sign = document.createElement('p');
     sign.className = 'signature';
     sign.textContent = LETTER.signature;
