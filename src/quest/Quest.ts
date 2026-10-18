@@ -275,6 +275,22 @@ export class Quest implements QuestView, PuzzleView {
     const standingOn = (at: THREE.Vector3, radius: number) =>
       Math.hypot(player.x - at.x, player.z - at.z) <= radius && Math.abs(player.y - CENTRE_ABOVE_FEET - at.y) < 0.9;
 
+    // --- Signs speak once per visit (and not again straight away). First, so that puzzle
+    // feedback from the same step (a wrong bell, a shell) is the message left on screen.
+    p.notes.forEach((note, i) => {
+      this.noteCooldown[i] = Math.max(0, this.noteCooldown[i] - dt);
+      const d = Math.hypot(player.x - note.position.x, player.z - note.position.z);
+      if (!this.noteInside[i] && d <= note.radius) {
+        this.noteInside[i] = true;
+        if (this.noteCooldown[i] === 0) {
+          this.noteCooldown[i] = NOTE_COOLDOWN;
+          this.onEvent({ type: 'note', id: note.id });
+        }
+      } else if (this.noteInside[i] && d > note.radius + 2) {
+        this.noteInside[i] = false;
+      }
+    });
+
     if (!this.bottleRead && standingOn(p.bottle, BOTTLE_RADIUS)) {
       this.bottleRead = true;
       this.progress();
@@ -329,20 +345,6 @@ export class Quest implements QuestView, PuzzleView {
       this.unlock('dig');
     }
 
-    // --- Signs speak once per visit (and not again straight away).
-    p.notes.forEach((note, i) => {
-      this.noteCooldown[i] = Math.max(0, this.noteCooldown[i] - dt);
-      const d = Math.hypot(player.x - note.position.x, player.z - note.position.z);
-      if (!this.noteInside[i] && d <= note.radius) {
-        this.noteInside[i] = true;
-        if (this.noteCooldown[i] === 0) {
-          this.noteCooldown[i] = NOTE_COOLDOWN;
-          this.onEvent({ type: 'note', id: note.id });
-        }
-      } else if (this.noteInside[i] && d > note.radius + 2) {
-        this.noteInside[i] = false;
-      }
-    });
   }
 
   private startSong(auto: boolean): void {
