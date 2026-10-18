@@ -116,4 +116,19 @@ test.describe('touch controls', () => {
       await expect(page.locator('.map-view button.continue')).toBeInViewport({ ratio: 1 });
     });
   }
+
+  test('messages never cover the goal card on an upright phone', async ({ page }) => {
+    await page.setViewportSize({ width: 430, height: 760 });
+    await startGame(page, 'touch');
+    const shell = (await page.evaluate(() => window.__game!.questSites()!.shells[0]));
+    await page.evaluate(([x, y, z]) => {
+      window.__game!.teleport(x, y + 0.1, z);
+      window.__game!.simulate(0.3, {});
+    }, [shell.x, shell.y, shell.z]);
+    const toast = page.locator('.quest-toast');
+    await expect(toast).toContainText('Gouden schelp');
+    const card = (await page.locator('.quest-hud').boundingBox())!;
+    const box = (await toast.boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(card.y + card.height);
+  });
 });

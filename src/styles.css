@@ -615,10 +615,9 @@ body.touch .hint {
   }
 }
 
-/* Narrow screens (a phone held upright): messages go below the quest card, not over it. */
+/* Narrow screens: slightly smaller messages (QuestHud moves them below the goal card). */
 @media (max-width: 600px) {
   .quest-toast {
-    top: 150px;
     font-size: 14px;
   }
 }

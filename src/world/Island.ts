@@ -21,7 +21,6 @@ import {
   QUEST_SPOTS,
   RUIN,
   SHELLS,
-  SIGNS,
   SPAWN,
 } from './IslandShape';
 import { Islet } from './Islet';
@@ -100,7 +99,6 @@ export class Island implements GameWorld {
       woods: { unlock: 'chest', revealFrom: ground(CHEST, 0.55) },
       cliff: { unlock: 'dig', revealFrom: ground(DIG, -0.3) },
     };
-    const lowCrate = this.lighthouse.obstacles.filter((o) => o.kind === 'crate').sort((a, b) => a.y - b.y)[0];
     this.quest = {
       spots: [
         ...QUEST_SPOTS.map((q) => ({
@@ -123,12 +121,8 @@ export class Island implements GameWorld {
         shells: SHELLS.map((p) => ground(p)),
         chest: ground(CHEST),
         dig: ground(DIG),
-        notes: [
-          { id: 'bells', position: ground(BELLS), radius: 5.5 },
-          { id: 'chest', position: ground(CHEST), radius: 3.5 },
-          { id: 'stones', position: ground(SIGNS.stones), radius: 3 },
-          ...(lowCrate ? [{ id: 'crates' as const, position: new THREE.Vector3(lowCrate.x, lowCrate.y, lowCrate.z), radius: 2.6 }] : []),
-        ],
+        // Only the bells need explaining; the chest, stones and crates speak for themselves.
+        notes: [{ id: 'bells', position: ground(BELLS), radius: 5.5 }],
       },
     };
     this.map = this.buildMap();

@@ -119,7 +119,9 @@ test.describe('lighthouse quest', () => {
     await page.keyboard.press('KeyK');
     await expect(page.locator('.map-view')).toHaveClass(/hidden/);
     expect((await snapshot(page)).state).toBe('playing');
-    await expect(page.locator('.quest-journal li')).toHaveCount(5);
+    // Just the goal, not where every piece is.
+    await expect(page.locator('.quest-journal li')).toHaveCount(1);
+    await expect(page.locator('.quest-journal li')).toHaveText('Zoek de vijf lensstukken van de vuurtoren');
 
     // The old J key opens the map too while playing; Escape closes it.
     await page.keyboard.press('KeyJ');

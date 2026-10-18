@@ -213,11 +213,22 @@ export class QuestHud {
         return li;
       }),
     );
+    this.placeToast();
+  }
+
+  /** Messages sit top-centre, but drop below the goal card wherever the two would overlap. */
+  private placeToast(): void {
+    this.toast.style.top = '';
+    if (this.el.classList.contains('hidden')) return;
+    const card = this.el.getBoundingClientRect();
+    const toast = this.toast.getBoundingClientRect();
+    if (toast.left < card.right + 8 && toast.top < card.bottom + 8) this.toast.style.top = `${card.bottom + 10}px`;
   }
 
   message(text: string, ms = 3600): void {
     this.toast.textContent = text;
     this.toast.classList.remove('hidden');
+    this.placeToast();
     window.clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => this.toast.classList.add('hidden'), ms);
   }

@@ -278,11 +278,9 @@ export const SHELLS: ReadonlyArray<{ x: number; z: number }> = [1.25, 0.85, -1.1
   return { x: Math.cos(theta) * r, z: Math.sin(theta) * r };
 });
 
-/** Wooden signposts (the hut's note has no post; it is placed by the lighthouse). */
+/** Wooden signposts: only the bells puzzle needs one. */
 export const SIGNS = {
   bells: bellsLocal(3.4, 1.8),
-  chest: { x: -26.2, z: 6.8 },
-  stones: { x: ISLET.shore.x + 0.1, z: ISLET.shore.z + 2 },
 } as const;
 
 /** Spots to keep clear of trees, rocks and bushes. */

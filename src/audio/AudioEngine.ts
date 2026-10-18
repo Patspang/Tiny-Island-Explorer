@@ -57,14 +57,30 @@ export class AudioEngine {
     if (!this.ctx) {
       const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return;
+      // iPhone/iPad: by default web audio obeys the silent switch, so the game is mute while the
+      // phone is on silent even with the volume up. "playback" makes it behave like a video.
+      const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+      if (session) {
+        try {
+          session.type = 'playback';
+        } catch {
+          // Not allowed here; keep the default.
+        }
+      }
       try {
         this.ctx = new Ctor();
       } catch {
         return;
       }
       this.build(this.ctx);
+      // Older iOS only starts audio once something has played inside a gesture: a silent blip.
+      const blip = this.ctx.createBufferSource();
+      blip.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+      blip.connect(this.ctx.destination);
+      blip.start(0);
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    // 'interrupted' (iOS, e.g. after a phone call) needs a resume just like 'suspended'.
+    if (this.ctx.state !== 'running') void this.ctx.resume();
   }
 
   setMuted(muted: boolean): void {
