@@ -1,4 +1,6 @@
-/** Start screen and pause menu. Plain DOM; styling lives in styles.css. */
+/** Start screen, pause menu, story screens and the quest HUD. Plain DOM; styling lives in styles.css. */
+
+import { FINALE, LETTER, TITLE, type JournalLine } from '../quest/story';
 
 const CONTROLS: ReadonlyArray<[string, string]> = [
   ['W A S D / Arrows', 'Move'],
@@ -6,6 +8,7 @@ const CONTROLS: ReadonlyArray<[string, string]> = [
   ['Space', 'Jump'],
   ['Drag mouse', 'Look around'],
   ['Mouse wheel', 'Zoom'],
+  ['J', 'Map'],
   ['R', 'Back to the beach'],
   ['M', 'Sound on / off'],
   ['Esc', 'Pause'],
@@ -37,9 +40,9 @@ export class StartScreen {
     this.el.className = 'overlay start-screen';
     this.el.innerHTML = `
       <div class="panel">
-        <p class="eyebrow">A small island adventure</p>
+        <p class="eyebrow">${TITLE.eyebrow}</p>
         <h1>Tiny Island Explorer</h1>
-        <p class="subtitle">The lighthouse has gone dark. Find the five lost pieces of its lens and bring the light back.</p>
+        <p class="subtitle">${TITLE.subtitle}</p>
         <button class="play" type="button" disabled>Loading island…</button>
       </div>`;
     this.el.querySelector('.panel')!.appendChild(controlsList());
@@ -103,7 +106,7 @@ export class Hint {
   constructor(parent: HTMLElement) {
     this.el = document.createElement('div');
     this.el.className = 'hint hidden';
-    this.el.textContent = 'Esc to pause · R to return to the beach · M for sound';
+    this.el.textContent = 'J for the map · Esc to pause · R to return to the beach · M for sound';
     parent.appendChild(this.el);
   }
 
@@ -145,18 +148,21 @@ export class SoundToggle {
   }
 }
 
-/** Quest progress pill (top-left) and short centred messages. */
+/** Quest progress card (top-left: lens dots, checklist, map button) and short centred messages. */
 export class QuestHud {
   readonly el: HTMLElement;
   private readonly dots: HTMLElement[] = [];
   private readonly label: HTMLElement;
+  private readonly journal: HTMLUListElement;
   private readonly toast: HTMLElement;
   private toastTimer = 0;
 
-  constructor(parent: HTMLElement, total: number) {
+  constructor(parent: HTMLElement, total: number, onMap: () => void) {
     this.el = document.createElement('div');
     this.el.className = 'quest-hud hidden';
     this.el.setAttribute('aria-live', 'polite');
+    const head = document.createElement('div');
+    head.className = 'quest-head';
     const dots = document.createElement('div');
     dots.className = 'quest-dots';
     for (let i = 0; i < total; i++) {
@@ -167,7 +173,18 @@ export class QuestHud {
     }
     this.label = document.createElement('span');
     this.label.className = 'quest-label';
-    this.el.append(dots, this.label);
+    const map = document.createElement('button');
+    map.type = 'button';
+    map.className = 'map-button';
+    map.textContent = 'Map (J)';
+    map.addEventListener('click', () => {
+      map.blur();
+      onMap();
+    });
+    head.append(dots, this.label, map);
+    this.journal = document.createElement('ul');
+    this.journal.className = 'quest-journal';
+    this.el.append(head, this.journal);
     parent.appendChild(this.el);
 
     this.toast = document.createElement('div');
@@ -189,11 +206,70 @@ export class QuestHud {
     this.label.textContent = 'The lighthouse is lit';
   }
 
+  /** The to-do list under the counter; finished tasks stay, ticked off. */
+  setJournal(lines: JournalLine[]): void {
+    this.journal.replaceChildren(
+      ...lines.map((line) => {
+        const li = document.createElement('li');
+        li.textContent = line.text;
+        if (line.done) li.className = 'done';
+        return li;
+      }),
+    );
+  }
+
   message(text: string, ms = 3600): void {
     this.toast.textContent = text;
     this.toast.classList.remove('hidden');
     window.clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => this.toast.classList.add('hidden'), ms);
+  }
+}
+
+/** The letter from the message in a bottle. */
+export class LetterScreen {
+  readonly el: HTMLElement;
+  private readonly button: HTMLButtonElement;
+
+  constructor(parent: HTMLElement, onContinue: () => void) {
+    this.el = document.createElement('div');
+    this.el.className = 'overlay letter hidden';
+    const panel = document.createElement('div');
+    panel.className = 'panel paper';
+    const eyebrow = document.createElement('p');
+    eyebrow.className = 'eyebrow';
+    eyebrow.textContent = LETTER.eyebrow;
+    const title = document.createElement('h2');
+    title.textContent = LETTER.title;
+    panel.append(eyebrow, title);
+    for (const text of LETTER.paragraphs) {
+      const p = document.createElement('p');
+      p.textContent = text;
+      panel.appendChild(p);
+    }
+    const sign = document.createElement('p');
+    sign.className = 'signature';
+    sign.textContent = LETTER.signature;
+    this.button = document.createElement('button');
+    this.button.type = 'button';
+    this.button.className = 'continue';
+    this.button.textContent = LETTER.button;
+    this.button.addEventListener('click', () => {
+      this.button.blur();
+      onContinue();
+    });
+    panel.append(sign, this.button);
+    this.el.appendChild(panel);
+    parent.appendChild(this.el);
+  }
+
+  get visible(): boolean {
+    return !this.el.classList.contains('hidden');
+  }
+
+  setVisible(visible: boolean): void {
+    this.el.classList.toggle('hidden', !visible);
+    if (visible) this.button.focus();
   }
 }
 
@@ -205,10 +281,10 @@ export class FinaleScreen {
     this.el.className = 'overlay finale hidden';
     this.el.innerHTML = `
       <div class="panel">
-        <p class="eyebrow">Quest complete</p>
-        <h1>The light is back</h1>
-        <p class="subtitle">The old lighthouse shines again, guiding ships home across the evening sea. The island is yours to explore.</p>
-        <button class="continue" type="button">Keep exploring</button>
+        <p class="eyebrow">${FINALE.eyebrow}</p>
+        <h1>${FINALE.title}</h1>
+        <p class="subtitle">${FINALE.subtitle}</p>
+        <button class="continue" type="button">${FINALE.button}</button>
       </div>`;
     const button = this.el.querySelector<HTMLButtonElement>('button.continue')!;
     button.addEventListener('click', () => {

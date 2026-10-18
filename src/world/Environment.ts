@@ -8,6 +8,7 @@ import {
   heightAt,
   LIGHTHOUSE,
   normalAt,
+  PUZZLE_CLEARINGS,
   QUEST_SPOTS,
   RUIN,
   SPAWN,
@@ -292,6 +293,8 @@ export class Environment {
     // Keep quest pieces (and the ruin) in the open.
     for (const q of QUEST_SPOTS) this.occupied.push({ x: q.x, z: q.z, r: 2.5 });
     this.occupied.push({ x: RUIN.x, z: RUIN.z, r: 3.5 });
+    // ...and the puzzle props (bells, chest, signs, shells, the X, the bottle).
+    for (const c of PUZZLE_CLEARINGS) this.occupied.push(c);
 
     // --- Trees, in clusters so the island has woods and open meadows.
     // The woodland quest piece sits in a clearing inside one of the woods.
@@ -435,6 +438,8 @@ export class Environment {
       if (rng() > smoothstep(-0.35, 0.25, meadow)) continue;
       const y = heightAt(x, z);
       if (!this.isGround(x, z, y, 1.45, 0.8, false) || distanceToPath(x, z) < 1.4) continue;
+      // Keep stone plates, the chest and the X readable.
+      if (PUZZLE_CLEARINGS.some((c) => Math.hypot(c.x - x, c.z - z) < c.r * 0.7)) continue;
       const variant = Math.floor(rng() * grass.geometries.length);
       grass.placements[variant].push({ x, y: y - 0.03, z, rotY: rng() * Math.PI * 2, scale: 0.6 + rng() * 0.5 });
       count++;

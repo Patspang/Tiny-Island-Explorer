@@ -250,3 +250,69 @@ export function finale(ctx: BaseAudioContext, out: AudioNode, t: number): void {
   }
   [0, 2, 4, 7].forEach((n, i) => bell(ctx, out, t + 2.2 + i * 0.25, PENTA[n] * 2, 0.08, 3));
 }
+
+/** The singing bells, biggest (lowest) first: a warm major triad an octave below the cues. */
+const BELL_NOTES = [261.63, 329.63, 392.0];
+
+/** One of the singing bells. A demo note (played by the bells themselves) rings a touch softer. */
+export function singingBell(ctx: BaseAudioContext, out: AudioNode, t: number, index: number, soft: boolean): void {
+  const f = BELL_NOTES[index] ?? BELL_NOTES[0];
+  bell(ctx, out, t, f, soft ? 0.2 : 0.26, 2.6);
+  bell(ctx, out, t, f * 2, 0.05, 1.2);
+}
+
+/** A wrong bell: a soft, comic "bonk" falling in pitch. */
+export function wrongNote(ctx: BaseAudioContext, out: AudioNode, t: number): void {
+  tone(ctx, out, t + 0.25, 300, 140, 0.16, 0.28, 'triangle');
+  tone(ctx, out, t + 0.45, 220, 100, 0.12, 0.3, 'triangle');
+}
+
+/** The bells' song is solved: all three ring together, then a bright run on top. */
+export function bellsSolved(ctx: BaseAudioContext, out: AudioNode, t: number): void {
+  BELL_NOTES.forEach((f, i) => bell(ctx, out, t + 0.5 + i * 0.05, f, 0.16, 3));
+  [0, 2, 4, 5].forEach((n, i) => bell(ctx, out, t + 0.9 + i * 0.09, PENTA[n], 0.08, 1.4));
+}
+
+/** Picking up a golden shell: a quick bright sparkle that climbs with each shell found. */
+export function shell(ctx: BaseAudioContext, out: AudioNode, t: number, found: number): void {
+  const base = Math.min(PENTA.length - 3, found);
+  for (let i = 0; i < 3; i++) bell(ctx, out, t + i * 0.06, PENTA[base + i] * 1.5, 0.07, 0.6);
+}
+
+/** The chest lid creaks open. */
+export function chestOpen(ctx: BaseAudioContext, out: AudioNode, t: number): void {
+  tone(ctx, out, t, 120, 90, 0.12, 0.1, 'triangle');
+  const o = ctx.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(180, t + 0.1);
+  o.frequency.linearRampToValueAtTime(320, t + 0.5);
+  o.frequency.linearRampToValueAtTime(240, t + 0.8);
+  const f = ctx.createBiquadFilter();
+  f.type = 'bandpass';
+  f.frequency.value = 900;
+  f.Q.value = 6;
+  const g = envelope(ctx, t + 0.1, 0.06, 0.1, 0.7);
+  o.connect(f).connect(g).connect(out);
+  o.start(t + 0.1);
+  o.stop(t + 0.95);
+}
+
+/** Digging at the X: a few scoops of sand, then a hollow "tok" as something turns up. */
+export function dig(ctx: BaseAudioContext, out: AudioNode, t: number): void {
+  for (let i = 0; i < 3; i++) {
+    noiseHit(ctx, out, t + i * 0.16, { type: 'lowpass', freq: 1400, to: 400, peak: 0.4, attack: 0.02, decay: 0.12 });
+  }
+  tone(ctx, out, t + 0.52, 520, 380, 0.14, 0.12, 'triangle');
+}
+
+/** Unrolling the letter from the bottle: a cork pop and a papery rustle. */
+export function letter(ctx: BaseAudioContext, out: AudioNode, t: number): void {
+  tone(ctx, out, t, 900, 300, 0.18, 0.06);
+  noiseHit(ctx, out, t + 0.12, { type: 'highpass', freq: 3000, peak: 0.12, attack: 0.05, decay: 0.3 });
+  noiseHit(ctx, out, t + 0.35, { type: 'bandpass', freq: 4200, q: 0.7, peak: 0.08, attack: 0.04, decay: 0.25 });
+}
+
+/** A hidden lens piece rises into view. */
+export function reveal(ctx: BaseAudioContext, out: AudioNode, t: number): void {
+  [4, 5, 7, 9].forEach((n, i) => bell(ctx, out, t + 0.1 + i * 0.1, PENTA[n], 0.07, 1.6));
+}

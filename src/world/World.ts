@@ -1,5 +1,5 @@
 import type * as THREE from 'three';
-import type { QuestGoal, QuestPieceSpot } from '../quest/Quest';
+import type { PuzzleView, QuestLayout } from '../quest/Quest';
 
 /** A solid obstacle, exposed for debugging and automated tests. */
 export interface ObstacleInfo {
@@ -21,7 +21,11 @@ export interface GameWorld {
   /** Main walking route (spawn -> landmark), if the level has one. */
   readonly route: ReadonlyArray<{ x: number; z: number }>;
   /** Lighthouse quest layout, if the level has one. */
-  readonly quest?: { spots: QuestPieceSpot[]; goal: QuestGoal };
+  readonly quest?: QuestLayout;
+  /** Drawing data for the in-game map, if the level has one. */
+  readonly map?: IslandMap;
+  /** Let puzzle props animate from the quest's state (called once, after the quest exists). */
+  bindPuzzles?(view: PuzzleView): void;
   /** Quest progress, for in-world feedback (e.g. sockets on the lighthouse plaque). */
   setQuestProgress?(collected: number, total: number): void;
   /** Lighthouse lamp level, 0..1 (quest finale). */
@@ -50,4 +54,24 @@ export interface GameWorld {
   /** `player` is the rendered feet position; plants bend away from it. */
   update(dt: number, time: number, camera: THREE.Camera, player?: THREE.Vector3): void;
   dispose(): void;
+}
+
+/** What the in-game map draws: world XZ coordinates, plain data (no Three.js). */
+export interface IslandMap {
+  /** Coastline, going round the island; `cliff` is 0 for beach, 1 for cliff. */
+  coastline: ReadonlyArray<{ x: number; z: number; cliff: number }>;
+  /** Half-size of the square area the map covers, centred on the origin. */
+  extent: number;
+  hill: { x: number; z: number; radius: number };
+  path: ReadonlyArray<{ x: number; z: number }>;
+  woods: ReadonlyArray<{ x: number; z: number }>;
+  landmarks: ReadonlyArray<MapLandmark>;
+}
+
+export interface MapLandmark {
+  kind: 'lighthouse' | 'hut' | 'ruin' | 'bells' | 'chest' | 'x' | 'stones' | 'bottle';
+  x: number;
+  z: number;
+  /** Lens piece this landmark leads to, for a tick once it is found. */
+  piece?: string;
 }

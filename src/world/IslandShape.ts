@@ -247,3 +247,51 @@ export const QUEST_SPOTS: ReadonlyArray<QuestSpot> = [
   { id: 'ruin', label: 'top of the old ruin', x: RUIN.x, z: RUIN.z, lift: RUIN.height + 0.75 },
   { id: 'woods', label: 'woodland clearing', x: -28, z: 8, lift: 0.9 },
 ];
+
+// --- Lens-quest puzzles: where they stand ---------------------------------------------------
+
+/**
+ * The singing bells, west of the ruin: a frame with three bells over coloured stone plates
+ * (local x), and the music stone in front of them (local +z, facing the approach from the path).
+ */
+export const BELLS = { x: 18, z: 3.5, rotY: -1.107, plateSpacing: 1.7, listenOffset: 2.6, song: [0, 2, 1, 2] } as const;
+
+/** Rotate a bell-frame-local offset into world XZ. */
+export function bellsLocal(lx: number, lz: number): { x: number; z: number } {
+  const c = Math.cos(BELLS.rotY);
+  const s = Math.sin(BELLS.rotY);
+  return { x: BELLS.x + lx * c + lz * s, z: BELLS.z - lx * s + lz * c };
+}
+
+/** Wren's chest in the woodland clearing; the woods piece floats out of it toward the clearing. */
+export const CHEST = { x: -28, z: 6.5, rotY: 0 } as const;
+
+/** The X from the map, on the north-east cliff top where the cliff piece is buried. */
+export const DIG = { x: 40.8, z: -27.9 } as const;
+
+/** The message in a bottle: a few steps ahead of the spawn, to the left of the path. */
+export const BOTTLE = { x: -3.7, z: 48.6 } as const;
+
+/** Golden shells on the dry sand of five different beaches (angle around the island). */
+export const SHELLS: ReadonlyArray<{ x: number; z: number }> = [1.25, 0.85, -1.1, 2.05, 3.05].map((theta) => {
+  const r = coastRadius(theta) * 0.83;
+  return { x: Math.cos(theta) * r, z: Math.sin(theta) * r };
+});
+
+/** Wooden signposts (the hut's note has no post; it is placed by the lighthouse). */
+export const SIGNS = {
+  bells: bellsLocal(3.4, 1.8),
+  chest: { x: -26.2, z: 6.8 },
+  stones: { x: ISLET.shore.x + 0.1, z: ISLET.shore.z + 2 },
+} as const;
+
+/** Spots to keep clear of trees, rocks and bushes. */
+export const PUZZLE_CLEARINGS: ReadonlyArray<{ x: number; z: number; r: number }> = [
+  { x: BELLS.x, z: BELLS.z, r: 4.6 },
+  { ...bellsLocal(0, BELLS.listenOffset), r: 1.6 },
+  { x: CHEST.x, z: CHEST.z, r: 2 },
+  { x: DIG.x, z: DIG.z, r: 2 },
+  { x: BOTTLE.x, z: BOTTLE.z, r: 2 },
+  ...SHELLS.map((s) => ({ ...s, r: 1.2 })),
+  ...Object.values(SIGNS).map((s) => ({ ...s, r: 1 })),
+];
