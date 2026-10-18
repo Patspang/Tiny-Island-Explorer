@@ -250,7 +250,7 @@ test.describe('movement sandbox', () => {
 
   test('camera orbits with mouse drag and zooms with the wheel', async ({ page }) => {
     const before = await snapshot(page);
-    const canvas = page.locator('canvas');
+    const canvas = page.locator('canvas.game-canvas');
     const box = (await canvas.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();

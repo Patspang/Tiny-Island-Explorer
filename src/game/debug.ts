@@ -38,7 +38,13 @@ export function createDebugHandle(game: Game, mode: string) {
               total: game.quest.total,
               lightLevel: game.quest.lightLevel,
               duskLevel: game.quest.duskLevel,
-              hintIndex: game.quest.hintIndex,
+              hint: game.quest.hintTarget,
+              bottleRead: game.quest.bottleRead,
+              bellsSolved: game.quest.bellsSolved,
+              songProgress: game.quest.songProgress,
+              shellsFound: game.quest.shellsFound,
+              chestOpen: game.quest.chestOpen,
+              dug: game.quest.dug,
             }
           : null,
         render: { calls: game.renderer.info.render.calls, triangles: game.renderer.info.render.triangles },
@@ -54,8 +60,26 @@ export function createDebugHandle(game: Game, mode: string) {
     spawn: () => v(game.world.spawn),
     questPieces: () =>
       game.quest
-        ? game.quest.spots.map((s, i) => ({ id: s.id, ...v(s.position), collected: game.quest!.isCollected(i) }))
+        ? game.quest.spots.map((s, i) => ({
+            id: s.id,
+            ...v(s.position),
+            available: game.quest!.isAvailable(i),
+            collected: game.quest!.isCollected(i),
+          }))
         : [],
+    /** Where the puzzles are (ground positions), or null on a level without them. */
+    questSites() {
+      const p = game.quest?.puzzles;
+      if (!p) return null;
+      return {
+        bottle: v(p.bottle),
+        bells: { plates: p.bells.plates.map(v), listen: v(p.bells.listen), song: [...p.bells.song] },
+        shells: p.shells.map(v),
+        chest: v(p.chest),
+        dig: v(p.dig),
+        notes: p.notes.map((n) => ({ id: n.id, ...v(n.position), radius: n.radius })),
+      };
+    },
     /** Shorten the hint timer (tests). */
     setHintDelay(seconds: number) {
       if (game.quest) game.quest.hintDelay = seconds;

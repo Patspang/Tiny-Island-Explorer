@@ -1,14 +1,36 @@
 import * as THREE from 'three';
 import { GROUP, groups, type PhysicsWorld } from '../physics/PhysicsWorld';
 import { Environment } from './Environment';
-import type { QuestGoal, QuestPieceSpot } from '../quest/Quest';
-import { coastDistance, coastRadius, heightAt, LIGHTHOUSE, normalAt, PATH_POINTS, pathMask, QUEST_SPOTS, SPAWN } from './IslandShape';
+import type { PuzzleId, PuzzleView, QuestLayout } from '../quest/Quest';
+import {
+  BELLS,
+  bellsLocal,
+  BOTTLE,
+  CHEST,
+  cliffWeightAtAngle,
+  coastDistance,
+  coastRadius,
+  DIG,
+  heightAt,
+  HILL_CENTER,
+  ISLET,
+  LIGHTHOUSE,
+  normalAt,
+  PATH_POINTS,
+  pathMask,
+  QUEST_SPOTS,
+  RUIN,
+  SHELLS,
+  SIGNS,
+  SPAWN,
+} from './IslandShape';
 import { Islet } from './Islet';
+import { PuzzleProps } from './PuzzleProps';
 import { Lighthouse } from './Lighthouse';
 import { Ocean } from './Ocean';
 import { Ruin } from './Ruin';
 import { Terrain } from './Terrain';
-import type { GameWorld, ObstacleInfo } from './World';
+import type { GameWorld, IslandMap, ObstacleInfo } from './World';
 
 /** Invisible wall ring just offshore (in normalised coast distance). */
 const BOUNDARY_D = 1.07;
@@ -23,7 +45,8 @@ export class Island implements GameWorld {
   readonly spawnYaw: number;
   readonly obstacles: ObstacleInfo[] = [];
   readonly route = PATH_POINTS;
-  readonly quest: { spots: QuestPieceSpot[]; goal: QuestGoal };
+  readonly quest: QuestLayout;
+  readonly map: IslandMap;
 
   private readonly terrain: Terrain;
   private readonly ocean: Ocean;
@@ -31,6 +54,8 @@ export class Island implements GameWorld {
   private readonly environment: Environment;
   private readonly ruin: Ruin;
   private readonly islet: Islet;
+  private readonly puzzleProps: PuzzleProps;
+  private puzzleView: PuzzleView | null = null;
   private readonly n = { x: 0, y: 1, z: 0 };
 
   constructor(physics: PhysicsWorld) {
@@ -63,19 +88,50 @@ export class Island implements GameWorld {
     this.group.add(this.islet.group);
     this.obstacles.push(...this.islet.obstacles);
 
+    this.puzzleProps = new PuzzleProps(physics);
+    this.group.add(this.puzzleProps.group);
+    this.obstacles.push(...this.puzzleProps.obstacles);
+
     const door = this.lighthouse.doorPosition;
+    const ground = (p: { x: number; z: number }, lift = 0) => new THREE.Vector3(p.x, heightAt(p.x, p.z) + lift, p.z);
+    // Three pieces are hidden until their puzzle is solved; they rise from where the puzzle is.
+    const unlocks: Record<string, { unlock: PuzzleId; revealFrom: THREE.Vector3 }> = {
+      ruin: { unlock: 'bells', revealFrom: ground(RUIN, RUIN.height + 0.2) },
+      woods: { unlock: 'chest', revealFrom: ground(CHEST, 0.55) },
+      cliff: { unlock: 'dig', revealFrom: ground(DIG, -0.3) },
+    };
+    const lowCrate = this.lighthouse.obstacles.filter((o) => o.kind === 'crate').sort((a, b) => a.y - b.y)[0];
     this.quest = {
       spots: [
         ...QUEST_SPOTS.map((q) => ({
           id: q.id,
           label: q.label,
           position: new THREE.Vector3(q.x, q.y ?? heightAt(q.x, q.z) + q.lift, q.z),
+          ...unlocks[q.id],
         })),
         { id: 'roof', label: "keeper's hut roof", position: this.lighthouse.roofPiecePosition.clone() },
       ],
       // The finale starts at the lighthouse door, not anywhere near the tower.
       goal: { x: door.x, y: door.y, z: door.z, radius: 1.9 },
+      puzzles: {
+        bottle: ground(BOTTLE),
+        bells: {
+          plates: [-1, 0, 1].map((k) => ground(bellsLocal(k * BELLS.plateSpacing, 0))),
+          listen: ground(bellsLocal(0, BELLS.listenOffset)),
+          song: [...BELLS.song],
+        },
+        shells: SHELLS.map((p) => ground(p)),
+        chest: ground(CHEST),
+        dig: ground(DIG),
+        notes: [
+          { id: 'bells', position: ground(BELLS), radius: 5.5 },
+          { id: 'chest', position: ground(CHEST), radius: 3.5 },
+          { id: 'stones', position: ground(SIGNS.stones), radius: 3 },
+          ...(lowCrate ? [{ id: 'crates' as const, position: new THREE.Vector3(lowCrate.x, lowCrate.y, lowCrate.z), radius: 2.6 }] : []),
+        ],
+      },
     };
+    this.map = this.buildMap();
 
     // Seat everything in the landscape with soft baked contact shadows.
     this.terrain.bakeOcclusion([
@@ -85,6 +141,37 @@ export class Island implements GameWorld {
     ]);
 
     this.addBoundary(physics);
+  }
+
+  bindPuzzles(view: PuzzleView): void {
+    this.puzzleView = view;
+  }
+
+  private buildMap(): IslandMap {
+    const coastline = Array.from({ length: 160 }, (_, i) => {
+      const t = (i / 160) * Math.PI * 2;
+      // The waterline sits a little inside the coast radius on beaches.
+      const r = coastRadius(t) * 0.97;
+      return { x: Math.cos(t) * r, z: Math.sin(t) * r, cliff: cliffWeightAtAngle(t) };
+    });
+    const hut = this.lighthouse.obstacles.find((o) => o.kind === 'hut');
+    return {
+      coastline,
+      extent: 70,
+      hill: { x: HILL_CENTER.x, z: HILL_CENTER.z, radius: 22 },
+      path: PATH_POINTS,
+      woods: this.environment.woods.map((w) => ({ x: w.x, z: w.z })),
+      landmarks: [
+        { kind: 'lighthouse', x: LIGHTHOUSE.x, z: LIGHTHOUSE.z },
+        ...(hut ? [{ kind: 'hut' as const, x: hut.x, z: hut.z, piece: 'roof' }] : []),
+        { kind: 'ruin', x: RUIN.x, z: RUIN.z, piece: 'ruin' },
+        { kind: 'bells', x: BELLS.x, z: BELLS.z },
+        { kind: 'chest', x: CHEST.x, z: CHEST.z, piece: 'woods' },
+        { kind: 'x', x: DIG.x, z: DIG.z, piece: 'cliff' },
+        { kind: 'stones', x: ISLET.rock.x, z: ISLET.rock.z, piece: 'islet' },
+        { kind: 'bottle', x: BOTTLE.x, z: BOTTLE.z },
+      ],
+    };
   }
 
   setQuestProgress(collected: number, total: number): void {
@@ -168,6 +255,7 @@ export class Island implements GameWorld {
     this.ocean.update(time, camera);
     this.environment.update(time, camera, player);
     this.lighthouse.update(dt, time);
+    if (this.puzzleView) this.puzzleProps.update(dt, this.puzzleView);
   }
 
   dispose(): void {
@@ -177,5 +265,6 @@ export class Island implements GameWorld {
     this.environment.dispose();
     this.ruin.dispose();
     this.islet.dispose();
+    this.puzzleProps.dispose();
   }
 }

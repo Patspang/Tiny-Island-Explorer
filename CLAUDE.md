@@ -8,7 +8,9 @@ A third-person exploration game set on a small stylized island. This is a game, 
 
 **Stage 1 (done):** one island; capsule player (walk/run/jump, slopes, collision); third-person camera; fall recovery.
 
-**Stage 2 (current): lighthouse quest.** Five lens pieces: woodland clearing and cliff top (find), ruin (one jump), sea rock via stepping stones (`ISLET`), keeper's hut roof via crates (`Lighthouse`). No beams by default; after 90 s without progress a hint beam rises over the nearest piece. A plaque by the door fills a socket per piece; the finale starts only at the door (`QuestGoal`), then the lamp relights and the scene blends to dusk. Logic in `src/quest/Quest.ts` (fixed step), presentation in `Lighthouse`, `Atmosphere.setDusk`, `Ocean.setDusk`, `ui/Overlays.ts`. Tests drive jumps deterministically via `window.__game.simulate`.
+**Stage 2 (done): lighthouse quest.** Five lens pieces; a plaque by the door fills a socket per piece; the finale starts only at the door (`QuestGoal`), then the lamp relights and the scene blends to dusk.
+
+**Stage 3 (current): story and puzzles, for players around 8 years old, in Dutch.** All player-facing text (story and interface) is in `src/quest/story.ts`. Map key is K (kaart); J also works. A message in a bottle by the spawn (letter from the absent keeper, Captain Zwartbaard) starts the story and opens a map (K). Three pieces are hidden behind puzzles: the singing bells west of the ruin (step on the music stone to hear a 4-note song, replay it on the coloured plates) reveal the ruin piece (still one jump up); five golden shells on five beaches open Zwartbaard's chest in the woodland clearing; standing on the X on the north-east cliff top digs up the cliff piece. Sea rock (stepping stones) and hut roof (crates) are platforming. Signposts speak when approached. After 75 s without progress a hint beam rises over the nearest unfinished task (the bottle after 8 s). Logic in `src/quest/Quest.ts` (fixed step, emits `QuestEvent`s); every player-facing word in `src/quest/story.ts`; puzzle positions in `IslandShape` (`BELLS`, `CHEST`, `DIG`, `BOTTLE`, `SHELLS`, `SIGNS`); props/colliders in `world/PuzzleProps.ts`; map in `ui/MapView.ts`. Tests drive jumps deterministically via `window.__game.simulate` and puzzles via `teleport` + `questSites()`.
 
 **Sound and ambient effects (added after Stage 2):** all audio is synthesised with Web Audio in `src/audio` (no sample files): ambience (surf by coast distance, wind by height, birds/gulls by day, crickets at dusk), footsteps per surface, jump/land, bush rustle, quest cues; mute via M or the corner button (remembered in localStorage). Audio starts only after a user gesture. Ground/water particles live in `player/GroundEffects`.
 
@@ -25,7 +27,7 @@ Three.js (rendering) · Rapier (`@dimforge/rapier3d-compat`, physics) · Vite (d
 - `npm run build` — type check + production build
 - `npm run test:e2e` — Playwright tests against the production build (~10 min with software WebGL). In cloud sessions prefix with `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`.
 
-Debug: `?sandbox` loads the flat movement test level; `?debug` exposes `window.__game` (snapshot, simulate, teleport, setCameraYaw, viewFrom, physicsGround, obstacles, route, questPieces, setHintDelay, sceneStats) in production builds.
+Debug: `?sandbox` loads the flat movement test level; `?debug` exposes `window.__game` (snapshot, simulate, teleport, setCameraYaw, viewFrom, physicsGround, obstacles, route, questPieces, questSites, setHintDelay, sceneStats) in production builds.
 
 Known Rapier pitfalls (verified with @dimforge/rapier3d-compat 0.21): never push the capsule down while grounded (it sinks into boxes and stalls on trimeshes — rely on snap-to-ground), and never spawn/teleport the capsule within the skin offset of a surface (it slips through). See `PlayerController`.
 

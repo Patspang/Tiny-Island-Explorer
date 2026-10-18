@@ -148,7 +148,7 @@ test.describe('island', () => {
     const lh = (await page.evaluate(() => window.__game!.obstacles())).find((o) => o.kind === 'lighthouse')!;
     // Stand on the pad right next to the tower.
     await teleport(page, lh.x, lh.y + 0.4, lh.z + lh.radius + 1.2, 0);
-    const canvas = page.locator('canvas');
+    const canvas = page.locator('canvas.game-canvas');
     const box = (await canvas.boundingBox())!;
     const cx = box.x + box.width / 2;
     const cy = box.y + box.height / 2;

@@ -228,6 +228,30 @@ export class AudioEngine {
   finale(): void {
     this.play((c, o, t) => S.finale(c, o, t));
   }
+  singingBell(bell: number, soft: boolean): void {
+    this.play((c, o, t) => S.singingBell(c, o, t, bell, soft));
+  }
+  wrongNote(): void {
+    this.play((c, o, t) => S.wrongNote(c, o, t));
+  }
+  bellsSolved(): void {
+    this.play((c, o, t) => S.bellsSolved(c, o, t));
+  }
+  shell(found: number): void {
+    this.play((c, o, t) => S.shell(c, o, t, found));
+  }
+  chestOpen(): void {
+    this.play((c, o, t) => S.chestOpen(c, o, t));
+  }
+  dig(): void {
+    this.play((c, o, t) => S.dig(c, o, t));
+  }
+  letter(): void {
+    this.play((c, o, t) => S.letter(c, o, t));
+  }
+  reveal(): void {
+    this.play((c, o, t) => S.reveal(c, o, t));
+  }
 
   dispose(): void {
     void this.ctx?.close();

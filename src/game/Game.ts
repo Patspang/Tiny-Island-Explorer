@@ -8,7 +8,7 @@ import { GROUP, groups, PhysicsWorld } from '../physics/PhysicsWorld';
 import { PlayerController, PLAYER_CAPSULE_CENTER } from '../player/PlayerController';
 import { GroundEffects } from '../player/GroundEffects';
 import { PlayerVisual, type PlayerVisualState } from '../player/PlayerVisual';
-import { Quest } from '../quest/Quest';
+import { Quest, type QuestEvent } from '../quest/Quest';
 import { Atmosphere } from '../world/Atmosphere';
 import type { GameWorld } from '../world/World';
 import { InputManager, type MoveInput } from './InputManager';
@@ -16,13 +16,7 @@ import { InputManager, type MoveInput } from './InputManager';
 /** 'overlay' = gameplay suspended behind a story screen (no pause menu). */
 export type GameState = 'title' | 'playing' | 'paused' | 'overlay';
 
-export type QuestUiEvent =
-  | { type: 'collect'; collected: number; total: number; label: string }
-  | { type: 'complete' }
-  | { type: 'finaleStart' }
-  | { type: 'hint'; label: string }
-  | { type: 'doorLocked'; missing: number }
-  | { type: 'done' };
+export type QuestUiEvent = QuestEvent | { type: 'done' };
 export type WorldFactory = (physics: PhysicsWorld, scene: THREE.Scene) => GameWorld;
 
 const SHADOW_RAY_GROUPS = groups(0xffff, GROUP.terrain | GROUP.obstacle);
@@ -52,7 +46,6 @@ export class Game {
   readonly quest: Quest | null;
   onQuest: (e: QuestUiEvent) => void = () => {};
   private questDoneSent = false;
-  private readonly sparkled: boolean[] = [];
 
   state: GameState = 'title';
   onStateChange: (state: GameState) => void = () => {};
@@ -65,6 +58,7 @@ export class Game {
   private lastTeleportSeen = 0;
   private readonly moveInput: MoveInput = { x: 0, y: 0, run: false, jumpHeld: false };
   private readonly renderFeet = new THREE.Vector3();
+  private readonly glintAt = new THREE.Vector3();
   private fpsFrames = 0;
   private fpsTime = 0;
   fps = 0;
@@ -100,37 +94,11 @@ export class Game {
     this.scene.add(this.visual.root, this.visual.shadowMesh, this.effects.group, this.sparkles.points);
 
     const layout = this.world.quest;
-    this.quest = layout
-      ? new Quest(layout.spots, layout.goal, {
-          onCollect: (collected, total, label) => {
-            this.world.setQuestProgress?.(collected, total);
-            this.audio.collect(collected - 1, total);
-            this.burstNewlyCollected();
-            this.onQuest({ type: 'collect', collected, total, label });
-          },
-          onHint: (label) => {
-            this.audio.hint();
-            this.onQuest({ type: 'hint', label });
-          },
-          onDoorLocked: (missing) => {
-            this.audio.doorLocked();
-            this.onQuest({ type: 'doorLocked', missing });
-          },
-          onComplete: () => {
-            this.audio.complete();
-            this.onQuest({ type: 'complete' });
-          },
-          onFinaleStart: () => {
-            this.audio.finale();
-            const lamp = this.world.lampPosition?.();
-            if (lamp) this.sparkles.shower(lamp);
-            this.onQuest({ type: 'finaleStart' });
-          },
-        })
-      : null;
+    this.quest = layout ? new Quest(layout, (e) => this.onQuestEvent(e)) : null;
     if (this.quest) {
       this.scene.add(this.quest.group);
       this.world.setQuestProgress?.(0, this.quest.total);
+      this.world.bindPuzzles?.(this.quest);
     }
 
     // Rapier's scene queries need one step before colliders are visible to the character controller.
@@ -287,16 +255,58 @@ export class Game {
     this.renderer.render(this.scene, this.followCamera.camera);
   }
 
-  /** Sparkle burst at whichever piece was just picked up. */
-  private burstNewlyCollected(): void {
-    const q = this.quest;
-    if (!q) return;
-    q.spots.forEach((spot, i) => {
-      if (q.isCollected(i) && !this.sparkled[i]) {
-        this.sparkled[i] = true;
-        this.sparkles.burst(spot.position);
+  /** Sound and sparkles for quest events, then hand them to the UI. */
+  private onQuestEvent(e: QuestEvent): void {
+    const q = this.quest!;
+    const p = q.puzzles;
+    switch (e.type) {
+      case 'collect':
+        this.world.setQuestProgress?.(e.collected, e.total);
+        this.audio.collect(e.collected - 1, e.total);
+        this.sparkles.burst(q.spots[e.index].position);
+        break;
+      case 'hint':
+        this.audio.hint();
+        break;
+      case 'doorLocked':
+        this.audio.doorLocked();
+        break;
+      case 'complete':
+        this.audio.complete();
+        break;
+      case 'finaleStart': {
+        this.audio.finale();
+        const lamp = this.world.lampPosition?.();
+        if (lamp) this.sparkles.shower(lamp);
+        break;
       }
-    });
+      case 'bottle':
+        this.audio.letter();
+        break;
+      case 'bell':
+        this.audio.singingBell(e.bell, e.kind === 'demo');
+        if (e.kind === 'wrong') this.audio.wrongNote();
+        break;
+      case 'bellsSolved':
+        this.audio.bellsSolved();
+        break;
+      case 'shell':
+        this.audio.shell(e.found);
+        if (p) this.sparkles.burst(p.shells[e.index].clone().setY(p.shells[e.index].y + 0.3), 30, 2.5);
+        break;
+      case 'chestOpen':
+        this.audio.chestOpen();
+        break;
+      case 'dig':
+        this.audio.dig();
+        if (p) this.sparkles.burst(p.dig, 40, 3);
+        break;
+      case 'reveal':
+        this.audio.reveal();
+        this.sparkles.burst(q.spots[e.index].position, 50, 3);
+        break;
+    }
+    this.onQuest(e);
   }
 
   private updateQuestPresentation(dt: number): void {
@@ -306,9 +316,18 @@ export class Game {
     if (!q) return;
     q.update(dt, this.renderTime, this.followCamera.camera.position);
     const cam = this.followCamera.camera.position;
+    const near = (at: THREE.Vector3) => at.distanceToSquared(cam) < 60 * 60;
     q.spots.forEach((spot, i) => {
-      if (!q.isCollected(i) && spot.position.distanceToSquared(cam) < 60 * 60) this.sparkles.glint(spot.position, dt);
+      if (q.isAvailable(i) && !q.isCollected(i) && near(spot.position)) this.sparkles.glint(spot.position, dt);
     });
+    // Shells and the bottle twinkle too, so they stand out from the sand.
+    const p = q.puzzles;
+    if (p) {
+      p.shells.forEach((at, i) => {
+        if (!q.isShellTaken(i) && near(at)) this.sparkles.glint(this.glintAt.copy(at).setY(at.y + 0.25), dt, 3);
+      });
+      if (!q.bottleRead) this.sparkles.glint(this.glintAt.copy(p.bottle).setY(p.bottle.y + 0.2), dt, 4);
+    }
     this.world.setLighthouseLight?.(q.lightLevel);
     this.atmosphere.setDusk(q.duskLevel);
     this.world.setDusk?.(q.duskLevel, this.atmosphere.horizon);
