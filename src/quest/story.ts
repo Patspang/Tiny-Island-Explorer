@@ -15,6 +15,7 @@ export const LETTER = {
   eyebrow: 'Een briefje in een fles',
   title: 'Beste ontdekker,',
   paragraphs: [
+    'Schrik maar niet van mijn naam! Met mijn grote zwarte baard zie ik er misschien uit als een piraat, maar ik ben de vuurtorenwachter. De enige schat die ik bewaak, is het licht.',
     'De storm heeft de glazen lens van mijn vuurtoren in vijf stukken gebroken. De wind heeft ze over het hele eiland geblazen!',
     'Ik zit vast op het grote eiland aan de overkant van de zee. Daarom heb ik jouw hulp nodig. Vanavond komen de vissersboten thuis. Zonder licht raken ze de weg kwijt.',
     'Ik heb aanwijzingen voor je achtergelaten: kijk goed naar mijn houten bordjes. Ik heb ook een kaart voor je getekend. Druk op K om hem te bekijken.',
