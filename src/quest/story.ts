@@ -84,11 +84,17 @@ export const UI = {
   paused: 'Pauze',
   resume: 'Verder spelen',
   cornerHint: 'K voor de kaart · Esc voor pauze · R terug naar het strand · M voor geluid',
+  cornerHintTouch: 'Linkerduim: lopen · Pijl-knop: springen · Veeg over het scherm: rondkijken',
+  backToBeach: 'Terug naar het strand',
+  jump: 'Springen',
+  pause: 'Pauze',
+  rotate: 'Draai je scherm voor een groter eiland',
   soundOn: 'Geluid aan (M)',
   soundOff: 'Geluid uit (M)',
   turnSoundOn: 'Geluid aanzetten',
   turnSoundOff: 'Geluid uitzetten',
   mapButton: 'Kaart (K)',
+  mapButtonTouch: 'Kaart',
   lensCount: (collected: number, total: number) => `Lensstukken ${collected} / ${total}`,
   lensRestored: 'Lens compleet — naar de deur van de vuurtoren!',
   lighthouseLit: 'De vuurtoren brandt weer',
@@ -102,6 +108,15 @@ export const UI = {
     ['R', 'Terug naar het strand'],
     ['M', 'Geluid aan / uit'],
     ['Esc', 'Pauze'],
+  ] as ReadonlyArray<[string, string]>,
+  /** Shown instead of the keys on phones and tablets. */
+  touchControls: [
+    ['Linkerduim', 'Lopen (helemaal duwen = rennen)'],
+    ['Pijl-knop', 'Springen'],
+    ['Vegen', 'Rondkijken'],
+    ['Twee vingers', 'In- en uitzoomen'],
+    ['Kaart-knop', 'Kaart'],
+    ['Pauze-knop', 'Pauze, of terug naar het strand'],
   ] as ReadonlyArray<[string, string]>,
 };
 

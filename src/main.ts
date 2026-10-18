@@ -2,9 +2,10 @@ import './styles.css';
 import { Game } from './game/Game';
 import { createDebugHandle, type DebugHandle } from './game/debug';
 import { PhysicsWorld } from './physics/PhysicsWorld';
-import { journalLines, NOTES, TOASTS } from './quest/story';
+import { journalLines, NOTES, TOASTS, UI } from './quest/story';
 import { MapView } from './ui/MapView';
 import { FinaleScreen, Hint, LetterScreen, PauseMenu, QuestHud, SoundToggle, StartScreen } from './ui/Overlays';
+import { isTouchDevice, TouchControls } from './ui/TouchControls';
 import { Island } from './world/Island';
 import { Sandbox } from './world/Sandbox';
 
@@ -24,7 +25,22 @@ async function boot(): Promise<void> {
     game?.audio.unlock();
     game?.play();
   });
-  const pause = new PauseMenu(app, () => game?.resume());
+  const pause = new PauseMenu(
+    app,
+    () => game?.resume(),
+    () => {
+      game?.player.respawn();
+      game?.resume();
+    },
+  );
+  const touch = isTouchDevice();
+  document.body.classList.toggle('touch', touch);
+  if (touch) {
+    const rotate = document.createElement('div');
+    rotate.className = 'rotate-hint';
+    rotate.textContent = UI.rotate;
+    app.appendChild(rotate);
+  }
   const finale = new FinaleScreen(app, () => {
     finale.setVisible(false);
     game?.resume();
@@ -36,7 +52,22 @@ async function boot(): Promise<void> {
     game = new Game(app, physics, (p) => (mode === 'sandbox' ? new Sandbox(p) : new Island(p)));
     const audio = game.audio;
     // Browsers only start audio from a user gesture; any click or key press will do.
-    for (const type of ['pointerdown', 'keydown'] as const) window.addEventListener(type, () => audio.unlock(), { passive: true });
+    // iOS only counts the end of a touch as a gesture that may start audio.
+    for (const type of ['pointerdown', 'pointerup', 'touchend', 'keydown'] as const) {
+      window.addEventListener(type, () => audio.unlock(), { passive: true });
+    }
+    const g0 = game;
+    const touchControls = touch
+      ? new TouchControls(
+          app,
+          {
+            stick: (x, y, run) => g0.input.setStick(x, y, run),
+            jump: (down) => g0.input.setTouchJump(down),
+            pause: () => g0.togglePause(),
+          },
+          { jump: UI.jump, pause: UI.pause },
+        )
+      : null;
     const sound = new SoundToggle(app, () => {
       audio.unlock();
       audio.toggleMute();
@@ -153,6 +184,7 @@ async function boot(): Promise<void> {
         }
       }
       pause.setVisible(state === 'paused');
+      touchControls?.setVisible(state === 'playing');
       if (state !== 'playing') hint.hide();
     };
     game.start();

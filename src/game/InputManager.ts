@@ -1,4 +1,7 @@
-/** Keyboard state for movement. Pointer input for the camera lives in FollowCamera. */
+/**
+ * Movement input: keyboard, plus the on-screen stick and jump button on touch devices.
+ * Pointer input for the camera lives in FollowCamera.
+ */
 
 const MOVE_KEYS = {
   forward: ['KeyW', 'ArrowUp'],
@@ -24,6 +27,9 @@ export class InputManager {
   private readonly down = new Set<string>();
   private jumpPresses = 0;
   private readonly actionHandlers = new Map<string, () => void>();
+  /** On-screen stick (touch), combined with the keys. */
+  private readonly stick = { x: 0, y: 0, run: false };
+  private touchJumpHeld = false;
   enabled = false;
 
   constructor(private readonly target: Window = window) {
@@ -47,6 +53,19 @@ export class InputManager {
     this.down.add(e.code);
   };
 
+  /** Touch stick deflection: x right, y forward, each -1..1. */
+  setStick(x: number, y: number, run: boolean): void {
+    this.stick.x = x;
+    this.stick.y = y;
+    this.stick.run = run;
+  }
+
+  /** Touch jump button pressed or released. */
+  setTouchJump(down: boolean): void {
+    if (down && !this.touchJumpHeld && this.enabled) this.jumpPresses++;
+    this.touchJumpHeld = down;
+  }
+
   private onKeyUp = (e: KeyboardEvent) => {
     this.down.delete(e.code);
   };
@@ -59,6 +78,8 @@ export class InputManager {
   clear = () => {
     this.down.clear();
     this.jumpPresses = 0;
+    this.setStick(0, 0, false);
+    this.touchJumpHeld = false;
   };
 
   private any(codes: readonly string[]): boolean {
@@ -74,10 +95,13 @@ export class InputManager {
       out.jumpHeld = false;
       return out;
     }
-    out.x = (this.any(MOVE_KEYS.right) ? 1 : 0) - (this.any(MOVE_KEYS.left) ? 1 : 0);
-    out.y = (this.any(MOVE_KEYS.forward) ? 1 : 0) - (this.any(MOVE_KEYS.back) ? 1 : 0);
-    out.run = this.any(MOVE_KEYS.run);
-    out.jumpHeld = this.any(MOVE_KEYS.jump);
+    const keyX = (this.any(MOVE_KEYS.right) ? 1 : 0) - (this.any(MOVE_KEYS.left) ? 1 : 0);
+    const keyY = (this.any(MOVE_KEYS.forward) ? 1 : 0) - (this.any(MOVE_KEYS.back) ? 1 : 0);
+    // The controller normalises anything longer than 1, so keys and stick can simply add up.
+    out.x = Math.max(-1, Math.min(1, keyX + this.stick.x));
+    out.y = Math.max(-1, Math.min(1, keyY + this.stick.y));
+    out.run = this.any(MOVE_KEYS.run) || this.stick.run;
+    out.jumpHeld = this.any(MOVE_KEYS.jump) || this.touchJumpHeld;
     return out;
   }
 
