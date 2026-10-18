@@ -16,10 +16,18 @@ const questState = async (page: Page) => (await snapshot(page)).quest!;
 const sites = (page: Page) => page.evaluate(() => window.__game!.questSites()!) as Promise<Sites>;
 const piece = async (page: Page, id: string) => (await pieces(page)).find((p) => p.id === id)!;
 
-/** Stand on a ground spot (feet just above it) and let the simulation run a moment. */
+/**
+ * Stand on a ground spot (feet just above it) and run the simulation for a moment. Uses the
+ * deterministic simulate hook (same fixed-step code as play), so it doesn't wait on rendering.
+ */
 async function standOn(page: Page, at: { x: number; y: number; z: number }, seconds = 0.4) {
-  await page.evaluate(([x, y, z]) => window.__game!.teleport(x, y + 0.1, z), [at.x, at.y, at.z]);
-  await waitSim(page, seconds);
+  await page.evaluate(
+    ([x, y, z, t]) => {
+      window.__game!.teleport(x, y + 0.1, z);
+      window.__game!.simulate(t, {});
+    },
+    [at.x, at.y, at.z, seconds],
+  );
 }
 
 async function playBells(page: Page, s: Sites, notes: number[]) {
@@ -266,8 +274,7 @@ test.describe('lighthouse quest', () => {
     const s = await sites(page);
     await playBells(page, s, s.bells.song);
     await collectShells(page, s);
-    await standOn(page, s.dig, 0.3);
-    await waitSim(page, 1.2);
+    await standOn(page, s.dig, 1.2);
     for (const p of await pieces(page)) {
       if (p.collected) continue;
       const before = (await questState(page)).collected;
