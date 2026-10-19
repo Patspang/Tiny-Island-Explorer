@@ -49,7 +49,9 @@ export class PuzzleProps {
     const wood = this.mat({ color: '#9a6a43', roughness: 0.85, map: boards });
     const darkWood = this.mat({ color: '#6b4a30', roughness: 0.9 });
     const stone = this.mat({ color: '#b8ae9c', roughness: 0.95, flatShading: true });
-    const bronze = this.mat({ color: '#c99a3e', roughness: 0.35, metalness: 0.75 });
+    // The scene has no environment map, so a strongly metallic bell has nothing to reflect and
+    // turns near-black in the roof's shadow. Mostly non-metal plus a faint warm glow keeps it golden.
+    const bronze = this.mat({ color: '#d9a646', roughness: 0.4, metalness: 0.25, emissive: '#6b4310', emissiveIntensity: 0.35 });
 
     // --- The singing bells.
     const frame = new THREE.Group();
