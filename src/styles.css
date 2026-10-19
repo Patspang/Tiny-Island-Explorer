@@ -349,7 +349,8 @@ kbd {
   font-weight: 600;
   text-align: center;
   transition: opacity 0.5s ease, visibility 0.5s;
-  pointer-events: none;
+  /* A tap or click closes it once read. */
+  cursor: pointer;
 }
 
 .letter,

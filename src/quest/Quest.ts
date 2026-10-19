@@ -28,7 +28,7 @@ export interface PuzzleLayout {
   bottle: THREE.Vector3;
   /** Three bells, each rung by stepping on the stone plate under it; the music stone plays the song. */
   bells: { plates: THREE.Vector3[]; listen: THREE.Vector3; song: number[] };
-  /** Golden shells; finding them all opens the chest. */
+  /** Golden shells; once all are found, the chest opens when the player walks up to it. */
   shells: THREE.Vector3[];
   chest: THREE.Vector3;
   /** The X from the map: standing on it digs up a piece. */
@@ -66,6 +66,19 @@ export type QuestEvent =
   /** A hidden piece starts to appear. */
   | { type: 'reveal'; index: number }
   | { type: 'note'; id: NoteId };
+
+/** Quest progress worth keeping between visits (plain data, stored as JSON). */
+export interface QuestSave {
+  version: 1;
+  bottleRead: boolean;
+  bellsSolved: boolean;
+  shells: boolean[];
+  chestOpen: boolean;
+  dug: boolean;
+  collected: boolean[];
+  /** A finale cut short counts as done: the lamp was already lit. */
+  done: boolean;
+}
 
 /** Read-only quest progress for the HUD, the map, world props and tests. */
 export interface QuestView {
@@ -109,6 +122,8 @@ const SHELL_RADIUS = 0.85;
 const BOTTLE_RADIUS = 1.0;
 const DIG_RADIUS = 1.0;
 const LISTEN_RADIUS = 0.8;
+/** With all shells found, the chest opens when the player comes this close (horizontal, m). */
+const CHEST_RADIUS = 2.0;
 /** The capsule centre stands about this high above the ground it is on. */
 const CENTRE_ABOVE_FEET = 0.87;
 /** Song playback: lead-in, then one note every NOTE_GAP seconds. */
@@ -230,6 +245,51 @@ export class Quest implements QuestView, PuzzleView {
     return this.time - (this.bellRang[i] ?? -Infinity);
   }
 
+  /** Progress to store; null on a level without the puzzles (nothing worth saving). */
+  save(): QuestSave | null {
+    if (!this.puzzles) return null;
+    return {
+      version: 1,
+      bottleRead: this.bottleRead,
+      bellsSolved: this.bellsSolved,
+      shells: [...this.shellTaken],
+      chestOpen: this.chestOpen,
+      dug: this.dug,
+      collected: [...this.collected],
+      done: this.state === 'finale' || this.state === 'done',
+    };
+  }
+
+  /**
+   * Put back stored progress before play starts. Emits no events: nothing is "happening", the
+   * island just is the way the player left it. Returns false (and changes nothing) if the data
+   * doesn't fit this island.
+   */
+  restore(data: unknown): boolean {
+    const d = data as Partial<QuestSave> | null;
+    const flags = (a: unknown, n: number): a is boolean[] =>
+      Array.isArray(a) && a.length === n && a.every((v) => typeof v === 'boolean');
+    if (!this.puzzles || !d || d.version !== 1) return false;
+    if (!flags(d.shells, this.shellTaken.length) || !flags(d.collected, this.collected.length)) return false;
+    this.bottleRead = !!d.bottleRead;
+    this.bellsSolved = !!d.bellsSolved;
+    this.songAutoplayed = this.bellsSolved;
+    d.shells.forEach((v, i) => (this.shellTaken[i] = v));
+    this.chestOpen = !!d.chestOpen && this.shellsFound === this.shellsTotal;
+    this.dug = !!d.dug;
+    const solved: Record<PuzzleId, boolean> = { bells: this.bellsSolved, chest: this.chestOpen, dig: this.dug };
+    this.spots.forEach((spot, i) => {
+      this.collected[i] = d.collected![i];
+      this.available[i] = !spot.unlock || solved[spot.unlock];
+      this.visuals[i].setShown(this.available[i] && !this.collected[i]);
+    });
+    if (this.collectedCount === this.total) {
+      this.state = d.done ? 'done' : 'complete';
+      if (d.done) this.lightLevel = this.duskLevel = 1;
+    }
+    return true;
+  }
+
   /** Fixed-step update with the player's capsule centre. */
   fixedUpdate(dt: number, player: THREE.Vector3): void {
     this.time += dt;
@@ -333,12 +393,12 @@ export class Quest implements QuestView, PuzzleView {
       this.progress();
       const found = this.shellsFound;
       this.onEvent({ type: 'shell', index: i, found, total: this.shellsTotal });
-      if (found === this.shellsTotal) {
-        this.chestOpen = true;
-        this.onEvent({ type: 'chestOpen' });
-        this.unlock('chest');
-      }
     });
+    if (!this.chestOpen && this.shellsTotal > 0 && this.shellsFound === this.shellsTotal && standingOn(p.chest, CHEST_RADIUS)) {
+      this.chestOpen = true;
+      this.onEvent({ type: 'chestOpen' });
+      this.unlock('chest');
+    }
 
     // --- X marks the spot.
     if (!this.dug && standingOn(p.dig, DIG_RADIUS)) {
@@ -414,7 +474,10 @@ export class Quest implements QuestView, PuzzleView {
       });
       if (p) {
         if (!this.bellsSolved) targets.push({ key: 'bells', at: p.bells.listen, lift: 0 });
-        if (!this.chestOpen) p.shells.forEach((at, i) => !this.shellTaken[i] && targets.push({ key: `shell:${i}`, at, lift: 0 }));
+        if (!this.chestOpen) {
+          p.shells.forEach((at, i) => !this.shellTaken[i] && targets.push({ key: `shell:${i}`, at, lift: 0 }));
+          if (this.shellsFound === this.shellsTotal) targets.push({ key: 'chest', at: p.chest, lift: 0 });
+        }
         if (!this.dug) targets.push({ key: 'dig', at: p.dig, lift: 0 });
       }
     }
@@ -550,6 +613,11 @@ class PieceVisual {
 
   collect(): void {
     this.collectedAt = this.time;
+  }
+
+  /** Show or hide straight away, without the reveal or pick-up animation (restoring a save). */
+  setShown(shown: boolean): void {
+    this.group.visible = shown;
   }
 
   /** A hidden piece rises from `from` (a chest, the ground) up to its spot. */

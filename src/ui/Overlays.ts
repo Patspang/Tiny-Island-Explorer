@@ -44,9 +44,18 @@ export class StartScreen {
     parent.appendChild(this.el);
   }
 
-  setReady(): void {
+  /** `onNewGame` is given when there is saved progress: Play then continues it. */
+  setReady(onNewGame?: () => void): void {
     this.button.disabled = false;
-    this.button.textContent = UI.play;
+    this.button.textContent = onNewGame ? UI.continuePlay : UI.play;
+    if (onNewGame) {
+      const fresh = document.createElement('button');
+      fresh.type = 'button';
+      fresh.className = 'secondary new-game';
+      fresh.textContent = UI.newGame;
+      fresh.addEventListener('click', onNewGame);
+      this.button.after(fresh);
+    }
     this.button.focus();
   }
 
@@ -186,6 +195,7 @@ export class QuestHud {
 
     this.toast = document.createElement('div');
     this.toast.className = 'quest-toast hidden';
+    this.toast.addEventListener('click', () => this.toast.classList.add('hidden'));
     parent.appendChild(this.toast);
     this.setProgress(0, total);
   }
@@ -225,11 +235,14 @@ export class QuestHud {
     if (toast.left < card.right + 8 && toast.top < card.bottom + 8) this.toast.style.top = `${card.bottom + 10}px`;
   }
 
-  message(text: string, ms = 3600): void {
+  /** Show a message long enough for a young reader (about 90 words a minute); a tap closes it sooner. */
+  message(text: string): void {
     this.toast.textContent = text;
     this.toast.classList.remove('hidden');
     this.placeToast();
     window.clearTimeout(this.toastTimer);
+    const words = text.split(/\s+/).filter(Boolean).length;
+    const ms = Math.max(3500, 1500 + words * 650);
     this.toastTimer = window.setTimeout(() => this.toast.classList.add('hidden'), ms);
   }
 }
