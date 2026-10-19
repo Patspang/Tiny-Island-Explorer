@@ -255,6 +255,16 @@ export class Game {
     this.renderer.render(this.scene, this.followCamera.camera);
   }
 
+  /** Put back stored quest progress (before play starts). False if it doesn't fit this island. */
+  restoreQuest(data: unknown): boolean {
+    const q = this.quest;
+    if (!q || !q.restore(data)) return false;
+    this.world.setQuestProgress?.(q.collectedCount, q.total);
+    // The finale was already seen; don't show its screen again.
+    this.questDoneSent = q.state === 'done';
+    return true;
+  }
+
   /** Sound and sparkles for quest events, then hand them to the UI. */
   private onQuestEvent(e: QuestEvent): void {
     const q = this.quest!;

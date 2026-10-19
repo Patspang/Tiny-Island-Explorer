@@ -38,6 +38,14 @@ async function collectShells(page: Page, s: Sites) {
   for (const shell of s.shells) await standOn(page, shell);
 }
 
+/** With all shells found, walk up beside the chest so it opens. */
+async function openChest(page: Page, s: Sites) {
+  const x = s.chest.x;
+  const z = s.chest.z + 1.4;
+  const ground = (await page.evaluate(([gx, gz]) => window.__game!.physicsGround(gx, gz), [x, z]))!;
+  await standOn(page, { x, y: ground, z }, 0.4);
+}
+
 async function holding(page: Page, keys: string[], seconds: number) {
   for (const k of keys) await page.keyboard.down(k);
   const s = await sampleSim(page, seconds);
@@ -119,9 +127,11 @@ test.describe('lighthouse quest', () => {
     await page.keyboard.press('KeyK');
     await expect(page.locator('.map-view')).toHaveClass(/hidden/);
     expect((await snapshot(page)).state).toBe('playing');
-    // Just the goal, not where every piece is.
-    await expect(page.locator('.quest-journal li')).toHaveCount(1);
-    await expect(page.locator('.quest-journal li')).toHaveText('Zoek de vijf lensstukken van de vuurtoren');
+    // Just the goals, not where every piece is.
+    await expect(page.locator('.quest-journal li')).toHaveText([
+      'Zoek de vijf lensstukken van de vuurtoren',
+      'Zoek de vijf gouden schelpen (0 / 5)',
+    ]);
 
     // The old J key opens the map too while playing; Escape closes it.
     await page.keyboard.press('KeyJ');
@@ -130,6 +140,15 @@ test.describe('lighthouse quest', () => {
     await expect(page.locator('.map-view')).toHaveClass(/hidden/);
     await expect(page.locator('.pause-menu')).toHaveClass(/hidden/);
     expect((await snapshot(page)).state).toBe('playing');
+
+    // The shells count up on the list; with all five, the chest becomes the next step.
+    const s2 = await sites(page);
+    await collectShells(page, s2);
+    await expect(page.locator('.quest-journal li')).toHaveText([
+      'Zoek de vijf lensstukken van de vuurtoren',
+      'Zoek de vijf gouden schelpen (5 / 5)',
+      'Breng de schelpen naar de schatkist',
+    ]);
   });
 
   test('playing the bells song reveals the ruin piece, which still needs a jump', async ({ page }) => {
@@ -159,7 +178,7 @@ test.describe('lighthouse quest', () => {
     expect((await questState(page)).collected).toBe(1);
   });
 
-  test("five golden shells open Zwartbaard's chest and free the woods piece", async ({ page }) => {
+  test("five golden shells open Zwartbaard's chest when the player walks up, freeing the woods piece", async ({ page }) => {
     const s = await sites(page);
     const woods = await piece(page, 'woods');
     // Walking up to where the piece will be does nothing while the chest is shut.
@@ -169,9 +188,14 @@ test.describe('lighthouse quest', () => {
     expect((await questState(page)).collected).toBe(0);
 
     await collectShells(page, s);
-    const q = await questState(page);
-    expect(q).toMatchObject({ shellsFound: 5, chestOpen: true });
+    // The last shell sends the player to the chest; it stays shut until they get there.
+    expect(await questState(page)).toMatchObject({ shellsFound: 5, chestOpen: false });
     await expect(page.locator('.quest-toast')).toContainText('schatkist');
+    await waitSim(page, 0.5);
+    expect((await questState(page)).chestOpen).toBe(false);
+    await openChest(page, s);
+    expect((await questState(page)).chestOpen).toBe(true);
+    await expect(page.locator('.quest-toast')).toContainText('schatkist van Zwartbaard gaat open');
     await waitSim(page, 1.2);
     await teleport(page, woods.x, ground + 0.1, woods.z + 3, 0);
     await holding(page, ['KeyW'], 1.2);
@@ -270,12 +294,16 @@ test.describe('lighthouse quest', () => {
     await waitSim(page, 0.3);
     await expect(page.locator('.quest-toast')).toContainText('missen nog 5 stukken');
     expect((await questState(page)).state).toBe('collecting');
+    // A tap closes a message once it's read.
+    await page.locator('.quest-toast').click();
+    await expect(page.locator('.quest-toast')).toBeHidden();
   });
 
   test('with the full lens, walking to the door lights the lighthouse at dusk', async ({ page }) => {
     const s = await sites(page);
     await playBells(page, s, s.bells.song);
     await collectShells(page, s);
+    await openChest(page, s);
     await standOn(page, s.dig, 1.2);
     for (const p of await pieces(page)) {
       if (p.collected) continue;
@@ -317,5 +345,34 @@ test.describe('lighthouse quest', () => {
     expect(after.state).toBe('playing');
     expect(after.quest).toMatchObject({ state: 'done', lightLevel: 1, duskLevel: 1 });
     await expect(page.locator('.quest-label')).toHaveText('De vuurtoren brandt weer');
+  });
+
+  test('progress is kept after a reload, and "Opnieuw beginnen" starts over', async ({ page }) => {
+    const s = await sites(page);
+    await collectShells(page, s);
+    await standOn(page, s.dig, 1.5);
+    expect(await questState(page)).toMatchObject({ shellsFound: 5, dug: true, collected: 1, chestOpen: false });
+
+    await page.reload();
+    await page.waitForFunction(() => !!window.__game, null, { timeout: 60_000 });
+    await expect(page.locator('button.play')).toHaveText('Verder spelen');
+    await page.locator('button.play').click();
+    await waitSim(page, 0.3);
+    expect(await questState(page)).toMatchObject({ shellsFound: 5, dug: true, collected: 1, chestOpen: false });
+    expect((await piece(page, 'cliff')).collected).toBe(true);
+    await expect(page.locator('.quest-label')).toHaveText('Lensstukken 1 / 5');
+    // The chest still opens when the player walks up to it.
+    await openChest(page, s);
+    expect((await questState(page)).chestOpen).toBe(true);
+
+    await page.reload();
+    await page.waitForFunction(() => !!window.__game, null, { timeout: 60_000 });
+    await page.locator('button.new-game').click();
+    await page.waitForFunction(() => !!window.__game, null, { timeout: 60_000 });
+    await expect(page.locator('button.play')).toHaveText('Spelen');
+    await expect(page.locator('button.new-game')).toHaveCount(0);
+    await page.locator('button.play').click();
+    await waitSim(page, 0.3);
+    expect(await questState(page)).toMatchObject({ shellsFound: 0, dug: false, collected: 0 });
   });
 });

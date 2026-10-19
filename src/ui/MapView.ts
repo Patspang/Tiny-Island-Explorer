@@ -10,6 +10,15 @@ export interface MapState {
   bottleRead: boolean;
 }
 
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
 const LABELS: Partial<Record<MapLandmark['kind'], string>> = MAP.labels;
 
 /**
@@ -157,18 +166,32 @@ export class MapView {
     // Landmarks, labels, and ticks on places already done.
     ctx.font = 'bold 12px Georgia, serif';
     ctx.textAlign = 'center';
-    for (const l of this.map.landmarks) {
-      if (l.kind === 'bottle' && state.bottleRead) continue;
+    const shown = this.map.landmarks.filter((l) => !(l.kind === 'bottle' && state.bottleRead));
+    // Landmarks can sit close together (hut by the lighthouse, bells by the ruin): every icon is
+    // kept clear, and each label takes the first spot around its icon that overlaps nothing.
+    const taken: Rect[] = shown.map((l) => ({ x: u(l.x) - 13, y: v(l.z) - 13, w: 26, h: 26 }));
+    for (const l of shown) {
       const x = u(l.x);
       const y = v(l.z);
       drawIcon(ctx, l.kind, x, y);
       const label = LABELS[l.kind];
       if (label) {
-        ctx.fillStyle = 'rgba(243, 228, 192, 0.85)';
         const w = ctx.measureText(label).width + 8;
-        ctx.fillRect(x - w / 2, y + 13, w, 15);
+        const h = 15;
+        const spots: Rect[] = [
+          { x: x - w / 2, y: y + 13, w, h },
+          { x: x - w / 2, y: y - 13 - h, w, h },
+          { x: x + 15, y: y - h / 2, w, h },
+          { x: x - 15 - w, y: y - h / 2, w, h },
+          { x: x - w / 2, y: y + 13 + h + 2, w, h },
+          { x: x - w / 2, y: y - 13 - 2 * h - 2, w, h },
+        ];
+        const r = spots.find((c) => !taken.some((t) => overlaps(c, t))) ?? spots[0];
+        taken.push(r);
+        ctx.fillStyle = 'rgba(243, 228, 192, 0.85)';
+        ctx.fillRect(r.x, r.y, r.w, r.h);
         ctx.fillStyle = '#4a3a2a';
-        ctx.fillText(label, x, y + 25);
+        ctx.fillText(label, r.x + r.w / 2, r.y + 12);
       }
       if (l.piece && state.found.has(l.piece)) drawTick(ctx, x + 12, y - 12);
     }

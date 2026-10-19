@@ -95,6 +95,33 @@ function windChunk(strength: number, start: number, push?: Push): string {
         }${push ? pushChunk(push) : ''}`;
 }
 
+/**
+ * Fragment chunk: foliage between the camera and the player dissolves in a fine dither, so a
+ * canopy or bush in front of the camera never hides the explorer. Works in view space: each
+ * fragment is projected onto the camera-to-player line and fades by its distance from it. Only
+ * the colour pass uses it; the shadow pass stays whole, so shadows don't flicker.
+ */
+function seeThrough(shader: { fragmentShader: string; uniforms: Record<string, THREE.IUniform> }): void {
+  shader.uniforms.uPlayer = playerUniform;
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\nuniform vec3 uPlayer;')
+    .replace(
+      '#include <clipping_planes_fragment>',
+      /* glsl */ `#include <clipping_planes_fragment>
+      {
+        vec3 toPlayer = ( viewMatrix * vec4( uPlayer + vec3( 0.0, 1.0, 0.0 ), 1.0 ) ).xyz;
+        vec3 frag = -vViewPosition;
+        float t = dot( frag, toPlayer ) / dot( toPlayer, toPlayer );
+        if ( t > 0.0 && t < 0.95 ) {
+          float off = length( frag - toPlayer * t );
+          float fade = ( 1.0 - smoothstep( 0.9, 1.8, off ) ) * ( 1.0 - smoothstep( 0.8, 0.95, t ) );
+          float dither = fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) );
+          if ( fade * 0.85 > dither ) discard;
+        }
+      }`,
+    );
+}
+
 /** Wind sway injected into a standard material; displacement grows with height above `start`. */
 function windMaterial(
   base: THREE.MeshStandardMaterialParameters,
@@ -102,9 +129,11 @@ function windMaterial(
   start: number,
   time: { value: number },
   push?: Push,
+  fadeNearCamera = false,
 ): THREE.MeshStandardMaterial {
   const mat = new THREE.MeshStandardMaterial(base);
   mat.onBeforeCompile = (shader) => {
+    if (fadeNearCamera) seeThrough(shader);
     shader.uniforms.uTime = time;
     shader.uniforms.uPlayer = playerUniform;
     // Foliage is two-sided but its normals describe the plant's volume (outward from a canopy,
@@ -119,7 +148,7 @@ function windMaterial(
       .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uPlayer;')
       .replace('#include <begin_vertex>', windChunk(strength, start, push));
   };
-  mat.customProgramCacheKey = () => `wind-${strength}-${start}-${mat.side}-${push ? Object.values(push).join('-') : ''}`;
+  mat.customProgramCacheKey = () => `wind-${strength}-${start}-${mat.side}-${push ? Object.values(push).join('-') : ''}-${fadeNearCamera}`;
   return mat;
 }
 
@@ -157,7 +186,10 @@ function billboard(
 function fluffMaterials(map: THREE.Texture, time: { value: number }, strength: number, start: number, push?: Push) {
   const key = `${strength}-${start}-${push ? Object.values(push).join('-') : ''}`;
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, map, alphaTest: 0.5, alphaToCoverage: true });
-  material.onBeforeCompile = (shader) => billboard(shader, time, strength, start, push);
+  material.onBeforeCompile = (shader) => {
+    billboard(shader, time, strength, start, push);
+    seeThrough(shader);
+  };
   material.customProgramCacheKey = () => `fluff-${key}`;
   const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.5 });
   depth.onBeforeCompile = (shader) => billboard(shader, time, strength, start, push);
@@ -230,12 +262,13 @@ export class Environment {
     const body = physics.createStaticBody();
     const solid = groups(GROUP.obstacle, 0xffff);
 
-    const foliage = this.track(windMaterial({ vertexColors: true, roughness: 0.85 }, 0.006, 2.2, this.time));
+    // Trees, palms and bushes fade where they come between the camera and the player.
+    const foliage = this.track(windMaterial({ vertexColors: true, roughness: 0.85 }, 0.006, 2.2, this.time, undefined, true));
     const palmMat = this.track(
-      windMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }, 0.004, 3.5, this.time),
+      windMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }, 0.004, 3.5, this.time, undefined, true),
     );
     const bushPush: Push = { radius: 1.3, lean: 0.35, sag: 0.12 };
-    const bushMat = this.track(windMaterial({ vertexColors: true, roughness: 0.9 }, 0.03, 0.3, this.time, bushPush));
+    const bushMat = this.track(windMaterial({ vertexColors: true, roughness: 0.9 }, 0.03, 0.3, this.time, bushPush, true));
     const flowerMat = this.track(windMaterial({ vertexColors: true, roughness: 0.9 }, 0.03, 0.3, this.time, { radius: 0.6, lean: 1.4, sag: 0.4 }));
     const grassMat = this.track(
       windMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide }, 0.35, 0, this.time, { radius: 0.65, lean: 1.6, sag: 0.6 }),

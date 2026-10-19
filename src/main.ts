@@ -9,6 +9,27 @@ import { isTouchDevice, TouchControls } from './ui/TouchControls';
 import { Island } from './world/Island';
 import { Sandbox } from './world/Sandbox';
 
+/** Where quest progress is kept between visits (this browser only). */
+const SAVE_KEY = 'tiny-island-quest';
+
+function loadSave(): unknown {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null; // Storage blocked or data damaged: start fresh.
+  }
+}
+
+function writeSave(data: unknown): void {
+  try {
+    if (data === null) localStorage.removeItem(SAVE_KEY);
+    else localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  } catch {
+    // Not saved (private mode, storage full); the game plays on.
+  }
+}
+
 declare global {
   interface Window {
     __game?: DebugHandle;
@@ -76,6 +97,8 @@ async function boot(): Promise<void> {
     audio.onMuteChange = (muted) => sound.setMuted(muted);
     const quest = game.quest;
     const g = game;
+    // The sandbox test level has no story; only the island keeps progress.
+    const restored = mode === 'island' && game.restoreQuest(loadSave());
     const mapData = game.world.map;
     const map = mapData
       ? new MapView(app, mapData, () => {
@@ -116,6 +139,10 @@ async function boot(): Promise<void> {
       }
     });
     const hud = quest ? new QuestHud(app, quest.total, openMap) : null;
+    if (hud && quest && restored) {
+      hud.setProgress(quest.collectedCount, quest.total);
+      if (quest.state === 'done') hud.setDone();
+    }
     game.onQuest = (e) => {
       if (!hud || !quest) return;
       switch (e.type) {
@@ -124,16 +151,16 @@ async function boot(): Promise<void> {
           if (e.collected < e.total) hud.message(TOASTS.pieceFound(e.total - e.collected));
           break;
         case 'complete':
-          hud.message(TOASTS.lensWhole, 5000);
+          hud.message(TOASTS.lensWhole);
           break;
         case 'hint':
-          hud.message(TOASTS.hint, 4500);
+          hud.message(TOASTS.hint);
           break;
         case 'doorLocked':
-          hud.message(TOASTS.doorLocked(e.missing), 4000);
+          hud.message(TOASTS.doorLocked(e.missing));
           break;
         case 'finaleStart':
-          hud.message(TOASTS.finaleStart, 4500);
+          hud.message(TOASTS.finaleStart);
           break;
         case 'done':
           hud.setDone();
@@ -145,30 +172,30 @@ async function boot(): Promise<void> {
           letter.setVisible(true);
           break;
         case 'songStart':
-          if (!e.auto) hud.message(TOASTS.songPlaying, 3000);
+          if (!e.auto) hud.message(TOASTS.songPlaying);
           break;
         case 'bell':
-          if (e.kind === 'right') hud.message(TOASTS.bellRight, 1600);
-          else if (e.kind === 'wrong') hud.message(TOASTS.bellWrong, 4000);
+          if (e.kind === 'right') hud.message(TOASTS.bellRight);
+          else if (e.kind === 'wrong') hud.message(TOASTS.bellWrong);
           break;
         case 'bellsSolved':
-          hud.message(TOASTS.bellsSolved, 6000);
+          hud.message(TOASTS.bellsSolved);
           break;
         case 'shell':
-          hud.message(TOASTS.shell(e.found, e.total), 3500);
+          hud.message(TOASTS.shell(e.found, e.total));
           break;
         case 'chestOpen':
-          hud.message(TOASTS.chestOpen, 5000);
+          hud.message(TOASTS.chestOpen);
           break;
         case 'dig':
-          hud.message(TOASTS.dig, 4500);
+          hud.message(TOASTS.dig);
           break;
         case 'note':
-          // Young readers need time: notes stay up longer than other messages.
-          hud.message(NOTES[e.id], 9000);
+          hud.message(NOTES[e.id]);
           break;
       }
       hud.setJournal(journalLines(quest));
+      if (mode === 'island') writeSave(quest.save());
     };
 
     let started = false;
@@ -180,7 +207,7 @@ async function boot(): Promise<void> {
         if (hud && quest) {
           hud.show();
           hud.setJournal(journalLines(quest));
-          hud.message(quest.bottleRead ? TOASTS.startAfterBottle : TOASTS.start, 5500);
+          if (quest.state !== 'done') hud.message(quest.bottleRead ? TOASTS.startAfterBottle : TOASTS.start);
         }
       }
       pause.setVisible(state === 'paused');
@@ -189,7 +216,14 @@ async function boot(): Promise<void> {
     };
     game.start();
     if (import.meta.env.DEV || params.has('debug')) window.__game = createDebugHandle(game, mode);
-    start.setReady();
+    start.setReady(
+      restored
+        ? () => {
+            writeSave(null);
+            location.reload();
+          }
+        : undefined,
+    );
   } catch (err) {
     console.error(err);
     start.setError(err instanceof Error ? err.message : String(err));

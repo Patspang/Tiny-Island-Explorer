@@ -14,16 +14,16 @@ export const TITLE = {
 export const LETTER = {
   eyebrow: 'Een briefje in een fles',
   title: 'Beste ontdekker,',
+  // Short sentences, few words: the child reads this before the game really starts.
   paragraphs: [
-    'Schrik maar niet van mijn naam! Met mijn grote zwarte baard zie ik er misschien uit als een piraat, maar ik ben de vuurtorenwachter. De enige schat die ik bewaak, is het licht.',
-    'De storm heeft de glazen lens van mijn vuurtoren in vijf stukken gebroken. De wind heeft ze over het hele eiland geblazen!',
-    'Ik zit vast op het grote eiland aan de overkant van de zee. Daarom heb ik jouw hulp nodig. Vanavond komen de vissersboten thuis. Zonder licht raken ze de weg kwijt.',
-    'Ik heb aanwijzingen voor je achtergelaten: kijk goed naar mijn houten bordjes. Ik heb ook een kaart voor je getekend.',
+    'Ik ben Kapitein Zwartbaard, de vuurtorenwachter.',
+    'De storm heeft de lens van mijn vuurtoren in vijf stukken gebroken. De wind heeft ze over het hele eiland geblazen.',
+    'Vanavond komen de vissersboten thuis. Zij hebben het licht nodig! Wil jij de vijf stukken zoeken? Ik heb een kaart voor je getekend.',
   ],
   /** Added to the last paragraph: how to open the map on this device. */
   mapHint: 'Druk op K om hem te bekijken.',
   mapHintTouch: 'Tik op de knop Kaart om hem te bekijken.',
-  signature: 'Dank je wel, dappere ontdekker! Kapitein Zwartbaard, de vuurtorenwachter',
+  signature: 'Dank je wel! Kapitein Zwartbaard',
   button: 'Laat de kaart zien',
 };
 
@@ -80,10 +80,14 @@ export const FINALE = {
 export const UI = {
   loading: 'Eiland wordt geladen…',
   play: 'Spelen',
+  /** Play button when there is saved progress, and the button that throws it away. */
+  continuePlay: 'Verder spelen',
+  newGame: 'Opnieuw beginnen',
   startFailed: 'Starten lukte niet',
   paused: 'Pauze',
   resume: 'Verder spelen',
-  cornerHint: 'K voor de kaart · Esc voor pauze · R terug naar het strand · M voor geluid',
+  // Just the two keys a child needs while playing; the rest is on the start screen and in the pause menu.
+  cornerHint: 'K voor de kaart · Esc voor pauze',
   cornerHintTouch: 'Linkerduim: lopen · Pijl-knop: springen · Veeg over het scherm: rondkijken',
   backToBeach: 'Terug naar het strand',
   jump: 'Springen',
@@ -130,6 +134,14 @@ export function journalLines(q: QuestView): JournalLine[] {
   if (!q.bottleRead) return [{ text: 'Bekijk het glimmende ding op het strand', done: false }];
   const allFound = q.state !== 'collecting';
   const lines: JournalLine[] = [{ text: 'Zoek de vijf lensstukken van de vuurtoren', done: allFound }];
-  if (allFound) lines.push({ text: 'Breng de lens naar de deur van de vuurtoren', done: q.state === 'done' });
+  if (allFound) {
+    lines.push({ text: 'Breng de lens naar de deur van de vuurtoren', done: q.state === 'done' });
+    return lines;
+  }
+  if (q.shellsTotal > 0) {
+    const shellsDone = q.shellsFound === q.shellsTotal;
+    lines.push({ text: `Zoek de vijf gouden schelpen (${q.shellsFound} / ${q.shellsTotal})`, done: shellsDone });
+    if (shellsDone) lines.push({ text: 'Breng de schelpen naar de schatkist', done: q.chestOpen });
+  }
   return lines;
 }
