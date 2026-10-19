@@ -775,8 +775,10 @@ export function mushrooms(seed: number): THREE.BufferGeometry {
     );
     stem.translate(x, 0, z);
     parts.push(prep(stem, '#efe6d0'));
+    // Lathe faces point outward only when the profile runs bottom-to-top / outside-to-inside:
+    // underside out to the rim, then over the dome to the top.
     const cap = new THREE.LatheGeometry(
-      [new THREE.Vector2(0.0, 0.2 * s), new THREE.Vector2(0.06 * s, 0.19 * s), new THREE.Vector2(0.1 * s, 0.15 * s), new THREE.Vector2(0.11 * s, 0.12 * s), new THREE.Vector2(0.02 * s, 0.13 * s)],
+      [new THREE.Vector2(0.02 * s, 0.13 * s), new THREE.Vector2(0.11 * s, 0.12 * s), new THREE.Vector2(0.1 * s, 0.15 * s), new THREE.Vector2(0.06 * s, 0.19 * s), new THREE.Vector2(0.0, 0.2 * s)],
       16,
     );
     cap.translate(x, 0, z);

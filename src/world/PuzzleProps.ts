@@ -74,8 +74,11 @@ export class PuzzleProps {
       plank.rotation.x = side * 0.62;
     }
 
+    // Lathe faces point outward only when the profile runs bottom-to-top / outside-to-inside, so
+    // the bell is traced as a closed shell: inner wall down to the rim, then the outside up to the top.
     const bellProfile = [
-      [0.02, 1.0], [0.36, 0.98], [0.5, 0.88], [0.55, 0.66], [0.6, 0.4], [0.74, 0.16], [0.9, 0.03], [0.88, 0], [0.72, 0.03],
+      [0.02, 0.9], [0.3, 0.88], [0.44, 0.8], [0.49, 0.62], [0.54, 0.38], [0.66, 0.16], [0.72, 0.03],
+      [0.88, 0], [0.9, 0.03], [0.74, 0.16], [0.6, 0.4], [0.55, 0.66], [0.5, 0.88], [0.36, 0.98], [0.02, 1.0],
     ].map(([r, y]) => new THREE.Vector2(r, y - 1));
     BELL_SIZES.forEach((size, i) => {
       const lx = (i - 1) * BELLS.plateSpacing;
